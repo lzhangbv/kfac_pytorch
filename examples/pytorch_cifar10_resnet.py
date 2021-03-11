@@ -8,7 +8,7 @@ import math
 from distutils.version import LooseVersion
 
 import torch
-torch.multiprocessing.set_start_method('spawn')
+#torch.multiprocessing.set_start_method('spawn')
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
@@ -64,6 +64,8 @@ parser.add_argument('--weight-decay', type=float, default=5e-4, metavar='W',
                     help='SGD weight decay (default: 5e-4)')
 
 # KFAC Parameters
+parser.add_argument('--kfac-name', type=str, default='eigen',
+        help='choises: %s' % kfac.kfac_mappers.keys() + ', default: '+'eigen')
 parser.add_argument('--kfac-update-freq', type=int, default=10,
                     help='iters between kfac inv ops (0 for no kfac updates) (default: 10)')
 parser.add_argument('--kfac-cov-update-freq', type=int, default=1,
@@ -195,13 +197,14 @@ optimizer = optim.SGD(model.parameters(), lr=args.base_lr, momentum=args.momentu
                       weight_decay=args.weight_decay)
 
 if use_kfac:
-    preconditioner = kfac.KFAC(model, lr=args.base_lr, factor_decay=args.stat_decay, 
-                               damping=args.damping, kl_clip=args.kl_clip, 
-                               fac_update_freq=args.kfac_cov_update_freq, 
-                               kfac_update_freq=args.kfac_update_freq,
-                               diag_blocks=args.diag_blocks,
-                               diag_warmup=args.diag_warmup,
-                               distribute_layer_factors=args.distribute_layer_factors)
+    KFAC = kfac.get_kfac_module(args.kfac_name)
+    preconditioner = KFAC(model, lr=args.base_lr, factor_decay=args.stat_decay, 
+            damping=args.damping, kl_clip=args.kl_clip, 
+            fac_update_freq=args.kfac_cov_update_freq, 
+            kfac_update_freq=args.kfac_update_freq,
+            diag_blocks=args.diag_blocks,
+            diag_warmup=args.diag_warmup,
+            distribute_layer_factors=args.distribute_layer_factors)
     kfac_param_scheduler = kfac.KFACParamScheduler(preconditioner,
             damping_alpha=args.damping_alpha,
             damping_schedule=args.damping_schedule,
@@ -270,11 +273,11 @@ def train(epoch):
             #t.set_postfix_str("loss: {:.4f}, acc: {:.2f}%".format(
             #train_loss.avg.item(), 100*train_accuracy.avg.item()))
             #t.update(1)
-            avg_time += (time.time()-stime)
-            if batch_idx > 0 and batch_idx % display == 0:
-                if args.verbose:
-                    logger.info("[%d][%d] train loss: %.4f, acc: %.3f, time: %.3f, speed: %.3f images/s" % (epoch, batch_idx, train_loss.avg.item(), 100*train_accuracy.avg.item(), avg_time/display, args.batch_size/(avg_time/display)))
-                    avg_time = 0.0
+            #avg_time += (time.time()-stime)
+            #if batch_idx > 0 and batch_idx % display == 0:
+                #if args.verbose:
+                    #logger.info("[%d][%d] train loss: %.4f, acc: %.3f, time: %.3f, speed: %.3f images/s" % (epoch, batch_idx, train_loss.avg.item(), 100*train_accuracy.avg.item(), avg_time/display, args.batch_size/(avg_time/display)))
+                    #avg_time = 0.0
         if args.verbose:
             logger.info("[%d] epoch train loss: %.4f, acc: %.3f" % (epoch, train_loss.avg.item(), 100*train_accuracy.avg.item()))
 
