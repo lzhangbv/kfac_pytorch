@@ -46,7 +46,9 @@ parser.add_argument('--warmup-epochs', type=int, default=5, metavar='WE',
 
 # KFAC Parameters
 parser.add_argument('--kfac-name', type=str, default='inverse',
-                    help='choises: %s' % kfac.kfac_mappers.keys() + ', default: '+'inverse')
+                    help='choices: %s' % kfac.kfac_mappers.keys() + ', default: '+'inverse')
+parser.add_argument('--exclude-parts', type=str, default='',
+                    help='choices: ComputeFactor,CommunicateFactor,ComputeInverse,CommunicateInverse')
 parser.add_argument('--kfac-update-freq', type=int, default=10,
                     help='iters between kfac inv ops (0 for no kfac updates) (default: 10)')
 parser.add_argument('--kfac-cov-update-freq', type=int, default=1,
@@ -156,19 +158,22 @@ if args.cuda:
 criterion = nn.CrossEntropyLoss()
 
 args.base_lr = args.base_lr * hvd.size()
-optimizer = optim.SGD(model.parameters(), lr=args.base_lr, momentum=args.momentum,
-                      weight_decay=args.weight_decay)
+optimizer = optim.SGD(model.parameters(), 
+        lr=args.base_lr, 
+        momentum=args.momentum,
+        weight_decay=args.weight_decay)
 
 use_kfac = True if args.kfac_update_freq > 0 else False
 if use_kfac:
     KFAC = kfac.get_kfac_module(args.kfac_name)
-    preconditioner = KFAC(model, lr=args.base_lr, factor_decay=args.stat_decay, 
-            damping=args.damping, kl_clip=args.kl_clip, 
+    preconditioner = KFAC(model, 
+            lr=args.base_lr, 
+            factor_decay=args.stat_decay, 
+            damping=args.damping, 
+            kl_clip=args.kl_clip, 
             fac_update_freq=args.kfac_cov_update_freq, 
-            kfac_update_freq=args.kfac_update_freq,
-            diag_blocks=1,
-            diag_warmup=5,
-            distribute_layer_factors=False)
+            kfac_update_freq=args.kfac_update_freq, 
+            exclude_parts=args.exclude_parts)
 
 # Distributed Optimizer
 compression = hvd.Compression.fp16 if args.fp16_allreduce else hvd.Compression.none

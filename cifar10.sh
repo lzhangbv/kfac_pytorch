@@ -3,10 +3,13 @@ dnn="${dnn:-resnet32}"
 nworkers="${nworkers:-1}"
 batch_size="${batch_size:-128}"
 rdma="${rdma:-1}"
-kfac="${kfac:-0}"
-epochs="${epochs:-1}"
+kfac="${kfac:-10}"
+epochs="${epochs:-100}"
 #lr_decay="${lr_decay:-100 150}"
 lr_decay="${lr_decay:-35 75 90}"
+
+kfac_name="${kfac_name:-inverse}"
+exclude_parts="${exclude_parts:-''}"
 
 MPIPATH=/home/esetstore/.local/openmpi-4.0.1
 PY=/home/esetstore/pytorch1.4/bin/python
@@ -33,4 +36,4 @@ fi
 $MPIPATH/bin/mpirun --oversubscribe --prefix $MPIPATH -np $nworkers -hostfile cluster${nworkers} -bind-to none -map-by slot \
     $params \
     $PY examples/pytorch_cifar10_resnet.py \
-        --base-lr 0.1 --epochs $epochs --kfac-update-freq $kfac --model $dnn --lr-decay $lr_decay --batch-size $batch_size 
+        --base-lr 0.1 --epochs $epochs --kfac-update-freq $kfac --model $dnn --lr-decay $lr_decay --batch-size $batch_size --kfac-name $kfac_name --exclude-parts ${exclude_parts}

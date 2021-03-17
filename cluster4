@@ -1,1 +1,2 @@
 localhost slots=4
+#gpu1 slots=4
