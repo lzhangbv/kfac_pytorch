@@ -61,3 +61,13 @@ def create_lr_schedule(workers, warmup_epochs, decay_schedule, alpha=0.1):
                     lr_adj *= alpha
         return lr_adj
     return lr_schedule
+
+# F1mc: sample pseudo labels from model distributions
+def generate_pseudo_labels(outputs):
+    """
+    Args:
+    outputs: model outputs before softmax layer for multi-classification
+    """
+    dist = F.softmax(outputs, dim=1)
+    pseudo_labels = torch.multinomial(dist, num_samples=1).view(-1)
+    return pseudo_labels

@@ -68,6 +68,7 @@ class KFAC(optim.Optimizer):
     def __init__(self,
                  model,
                  lr=0.1,
+                 hook_enabled=True,
                  factor_decay=0.95,
                  damping=0.001,
                  kl_clip=0.001,
@@ -76,7 +77,7 @@ class KFAC(optim.Optimizer):
                  batch_averaged=True,
                  diag_blocks=1,
                  diag_warmup=0,
-                 precon_first=True,
+                 precon_first=False,
                  distribute_layer_factors=False,
                  sparse=False,
                  sparse_ratio=0.01,
@@ -118,6 +119,7 @@ class KFAC(optim.Optimizer):
         self.modules = []
         self.module_names = []
         # register hooks for known modules
+        self.hook_enabled = hook_enabled
         self._register_modules(model)
 
         self.steps = 0
@@ -156,14 +158,17 @@ class KFAC(optim.Optimizer):
         self.eps = 1e-10  # for numerical stability
         self.rank_iter = cycle(list(range(hvd.size())))
 
+    def set_hook_enabled(self, mode=True):
+        self.hook_enabled = mode
+
     def _save_input(self, module, input):
         """Hook for saving layer input"""
-        if torch.is_grad_enabled() and self.steps % self.fac_update_freq == 0:
+        if self.hook_enabled and torch.is_grad_enabled() and self.steps % self.fac_update_freq == 0:
             self.m_a[module] = input[0].data
 
     def _save_grad_output(self, module, grad_input, grad_output):
         """Hook for saving gradient w.r.t output"""
-        if self.steps % self.fac_update_freq == 0:
+        if self.hook_enabled and self.steps % self.fac_update_freq == 0:
             self.m_g[module] = grad_output[0].data
 
     def _register_modules(self, model):

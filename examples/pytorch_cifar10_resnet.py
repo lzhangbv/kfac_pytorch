@@ -45,6 +45,8 @@ parser.add_argument('--warmup-epochs', type=int, default=5, metavar='WE',
 
 
 # KFAC Parameters
+parser.add_argument('--kfac-type', type=str, default='F1mc', 
+                    help='choices: F1mc or Femp') 
 parser.add_argument('--kfac-name', type=str, default='inverse',
                     help='choices: %s' % kfac.kfac_mappers.keys() + ', default: '+'inverse')
 parser.add_argument('--exclude-parts', type=str, default='',
@@ -206,12 +208,26 @@ def train(epoch):
             data, target = data.cuda(), target.cuda()
         optimizer.zero_grad()
 
+        if use_kfac:
+            preconditioner.set_hook_enabled(True)    # forward and save m_a
+        
         output = model(data)
+
+        if use_kfac and args.kfac_type == 'F1mc':
+            pseudo_labels = generate_pseudo_labels(output)
+            pseudo_loss = criterion(output, pseudo_labels)
+            pseudo_loss.backward(retain_graph=True) # backward and save m_g (F1mc)
+            optimizer.synchronize()
+            optimizer.zero_grad()                   # zero pseudo gradients
+
         loss = criterion(output, target)
         with torch.no_grad():
             train_loss.update(criterion(output, target))
             train_accuracy.update(accuracy(output, target))
 
+        if use_kfac and args.kfac_type == 'F1mc':
+            preconditioner.set_hook_enabled(False)   # backward and no hook (F1mc), but save m_g (Femp)
+        
         loss.backward()
 
         optimizer.synchronize()

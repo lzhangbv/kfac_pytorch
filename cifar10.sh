@@ -5,9 +5,14 @@ batch_size="${batch_size:-128}"
 rdma="${rdma:-1}"
 kfac="${kfac:-10}"
 epochs="${epochs:-100}"
-#lr_decay="${lr_decay:-100 150}"
-lr_decay="${lr_decay:-35 75 90}"
 
+if [ "$kfac" = "0" ]; then
+lr_decay="${lr_decay:-100 150}"
+else
+lr_decay="${lr_decay:-35 75 90}"
+fi
+
+kfac_type="${kfac_type:-Femp}"
 kfac_name="${kfac_name:-inverse}"
 exclude_parts="${exclude_parts:-''}"
 
@@ -36,4 +41,4 @@ fi
 $MPIPATH/bin/mpirun --oversubscribe --prefix $MPIPATH -np $nworkers -hostfile cluster${nworkers} -bind-to none -map-by slot \
     $params \
     $PY examples/pytorch_cifar10_resnet.py \
-        --base-lr 0.1 --epochs $epochs --kfac-update-freq $kfac --model $dnn --lr-decay $lr_decay --batch-size $batch_size --kfac-name $kfac_name --exclude-parts ${exclude_parts}
+        --base-lr 0.1 --epochs $epochs --kfac-update-freq $kfac --model $dnn --lr-decay $lr_decay --batch-size $batch_size --kfac-type $kfac_type --kfac-name $kfac_name --exclude-parts ${exclude_parts}
