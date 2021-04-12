@@ -77,7 +77,7 @@ class KFAC(optim.Optimizer):
                  batch_averaged=True,
                  diag_blocks=1,
                  diag_warmup=0,
-                 distribute_layer_factors=None,
+                 distribute_layer_factors=False,
                  sparse=False,
                  sparse_ratio=0.01,
                  exclude_parts=''):

@@ -5,9 +5,10 @@ batch_size="${batch_size:-128}"
 rdma="${rdma:-1}"
 kfac="${kfac:-10}"
 epochs="${epochs:-100}"
+base_lr="${base_lr:-0.1}"
 
-if [ "$kfac" = "0" ]; then
-lr_decay="${lr_decay:-100 150}"
+if [ "$epochs" = "50" ]; then
+lr_decay="${lr_decay:-20 35 45}"
 else
 lr_decay="${lr_decay:-35 75 90}"
 fi
@@ -15,6 +16,8 @@ fi
 kfac_type="${kfac_type:-Femp}"
 kfac_name="${kfac_name:-inverse}"
 exclude_parts="${exclude_parts:-''}"
+stat_decay="${stat_decay:-0.95}"
+damping="${damping:-0.003}"
 
 MPIPATH=/home/esetstore/.local/openmpi-4.0.1
 PY=/home/esetstore/pytorch1.4/bin/python
@@ -41,4 +44,4 @@ fi
 $MPIPATH/bin/mpirun --oversubscribe --prefix $MPIPATH -np $nworkers -hostfile cluster${nworkers} -bind-to none -map-by slot \
     $params \
     $PY examples/pytorch_cifar10_resnet.py \
-        --base-lr 0.1 --epochs $epochs --kfac-update-freq $kfac --model $dnn --lr-decay $lr_decay --batch-size $batch_size --kfac-type $kfac_type --kfac-name $kfac_name --exclude-parts ${exclude_parts}
+        --base-lr $base_lr --epochs $epochs --kfac-update-freq $kfac --model $dnn --lr-decay $lr_decay --batch-size $batch_size --stat-decay $stat_decay --damping $damping  --kfac-type $kfac_type --kfac-name $kfac_name --exclude-parts ${exclude_parts}
