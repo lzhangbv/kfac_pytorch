@@ -60,7 +60,15 @@ void Communicator::synchronize() {
 //}
 
 void Communicator::allReduce(torch::Tensor tensor) {
-    NCCLCHECK(ncclAllReduce(tensor.data_ptr<float>(), tensor.data_ptr<float>(), tensor.numel(), ncclFloat, ncclSum, m_nccl_comms[0], m_streams[0]));
+    NCCLCHECK(ncclAllReduce(tensor.data_ptr<float>(), tensor.data_ptr<float>(), tensor.numel(), ncclFloat, ncclSum, m_nccl_comms[m_current_comm], m_streams[m_current_comm]));
+    m_current_comm++;
+    m_current_comm %= m_num_comms;
+}
+
+void Communicator::reduce(torch::Tensor tensor, int root) {
+    NCCLCHECK(ncclReduce(tensor.data_ptr<float>(), tensor.data_ptr<float>(), tensor.numel(), ncclFloat, ncclSum, root, m_nccl_comms[m_current_comm], m_streams[m_current_comm]));
+    m_current_comm++;
+    m_current_comm %= m_num_comms;
 }
 
 //void Communicator::multiBcast(vector<torch::Tensor> &tensor_list, void (*op)(torch::Tensor)) {

@@ -38,6 +38,18 @@ def multi_bcast():
     communicator.multiBcast(tensors, _op)
     print('after rank: %d' % rank, tensors)
 
+def reduce():
+    rank = hvd.rank()
+    local_rank = hvd.local_rank()
+    size = hvd.size()
+    torch.cuda.set_device(local_rank)
+    communicator = tcmm.Communicator(rank, size)
+    tensor = torch.rand(2).cuda()
+    print('before rank: %d' % rank, tensor)
+    communicator.reduce(tensor, 0)
+    print('after rank: %d' % rank, tensor)
+
 if __name__ == '__main__':
     #allreduce()
-    multi_bcast()
+    #multi_bcast()
+    reduce()

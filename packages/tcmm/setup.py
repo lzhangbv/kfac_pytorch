@@ -7,10 +7,11 @@ os.system('pip uninstall -y tcmm')
 
 CUDA_DIR = _find_cuda_home()
 
-NCCL_DIR= '/home/comp/15485625/downloads/nccl_2.4.8-1+cuda10.1_x86_64'
-MPI_DIR = '/usr/local/openmpi/openmpi-4.0.1'
+#NCCL_DIR= '/home/comp/15485625/downloads/nccl_2.4.8-1+cuda10.1_x86_64'
+#MPI_DIR = '/usr/local/openmpi/openmpi-4.0.1'
 #NCCL_DIR = '/home/esetstore/downloads/nccl_2.4.7-1+cuda10.1_x86_64'
-#MPI_DIR = '/home/esetstore/.local/openmpi-4.0.1'
+NCCL_DIR = '/home/esetstore/downloads/nccl_2.6.4-1+cuda10.1_x86_64'
+MPI_DIR = '/home/esetstore/.local/openmpi-4.0.1'
 
 # Python interface
 setup(

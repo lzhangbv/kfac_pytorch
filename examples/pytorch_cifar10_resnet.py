@@ -5,6 +5,7 @@ import os
 import sys
 import datetime
 import math
+import numpy as np
 import logging
 
 logger = logging.getLogger()
@@ -21,6 +22,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.lr_scheduler import LambdaLR
 from torchvision import datasets, transforms, models
+import torch.multiprocessing as mp
 
 import cifar_resnet as resnet
 from utils import *
@@ -88,6 +90,7 @@ def initialize():
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     args.use_kfac = True if args.kfac_update_freq > 0 else False
     
+
     hvd.init()
 
     torch.manual_seed(args.seed)
@@ -100,7 +103,8 @@ def initialize():
     # Logging Settings
     os.makedirs(args.log_dir, exist_ok=True)
     logfile = os.path.join(args.log_dir,
-        'cifar10_{}_ep{}_bs{}_kfac{}_{}_gpu{}.log'.format(args.model, args.epochs, args.batch_size, args.kfac_update_freq, args.kfac_name, hvd.size()))
+        #'cifar10_{}_ep{}_bs{}_kfac{}_{}_gpu{}.log'.format(args.model, args.epochs, args.batch_size, args.kfac_update_freq, args.kfac_name, hvd.size()))
+        'cifar10_{}_ep{}_bs{}_gpu{}_kfac{}_{}_{}.log'.format(args.model, args.epochs, args.batch_size, hvd.size(), args.kfac_update_freq, args.kfac_name, args.exclude_parts))
 
     hdlr = logging.FileHandler(logfile)
     hdlr.setFormatter(formatter)
@@ -135,13 +139,15 @@ def get_dataset(args):
     # Use DistributedSampler to partition the training data.
     train_sampler = torch.utils.data.distributed.DistributedSampler(
             train_dataset, num_replicas=hvd.size(), rank=hvd.rank())
-    train_loader = torch.utils.data.DataLoader(train_dataset,
+    #train_loader = torch.utils.data.DataLoader(train_dataset,
+    train_loader = MultiEpochsDataLoader(train_dataset,
             batch_size=args.batch_size, sampler=train_sampler, **kwargs)
 
     # Use DistributedSampler to partition the test data.
     test_sampler = torch.utils.data.distributed.DistributedSampler(
             test_dataset, num_replicas=hvd.size(), rank=hvd.rank())
-    test_loader = torch.utils.data.DataLoader(test_dataset, 
+    #test_loader = torch.utils.data.DataLoader(test_dataset, 
+    test_loader = MultiEpochsDataLoader(test_dataset, 
             batch_size=args.test_batch_size, sampler=test_sampler, **kwargs)
     
     return train_sampler, train_loader, test_sampler, test_loader
@@ -218,13 +224,18 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, criterion, trai
     
     train_loss = Metric('train_loss')
     train_accuracy = Metric('train_accuracy')
-    
+    avg_time = 0.0
+    display = 1
+    iotimes=[];fwbwtimes=[];kfactimes=[];commtimes=[];uptimes=[]
+
     for batch_idx, (data, target) in enumerate(train_loader):
         stime = time.time()
 
         if args.cuda:
             data, target = data.cuda(), target.cuda()
         optimizer.zero_grad()
+        iotime = time.time()
+        iotimes.append(iotime-stime)
 
         if args.use_kfac:
             preconditioner.set_hook_enabled(True)    # forward and save m_a
@@ -240,22 +251,40 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, criterion, trai
 
         loss = criterion(output, target)
         with torch.no_grad():
-            train_loss.update(criterion(output, target))
+            train_loss.update(loss)
             train_accuracy.update(accuracy(output, target))
 
         if args.use_kfac and args.kfac_type == 'F1mc':
             preconditioner.set_hook_enabled(False)   # backward and no hook (F1mc), but save m_g (Femp)
         
         loss.backward()
+        fwbwtime = time.time()
+        fwbwtimes.append(fwbwtime-iotime)
 
         optimizer.synchronize()
+        commtime = time.time()
+        commtimes.append(commtime-fwbwtime)
+        
         if args.use_kfac:
             preconditioner.step(epoch=epoch)
+        kfactime = time.time()
+        kfactimes.append(kfactime-commtime)
+    
         with optimizer.skip_synchronize():
             optimizer.step()
+        updatetime=time.time()
+        uptimes.append(updatetime-kfactime)
+        avg_time += (time.time()-stime)
+            
+        if (batch_idx + 1) % display == 0:
+            #if False:
+            if args.verbose:
+                logger.info("[%d][%d] time: %.3f, speed: %.3f images/s" % (epoch, batch_idx, avg_time/display, args.batch_size/(avg_time/display)))
+                logger.info('Profiling: IO: %.3f, FW+BW: %.3f, COMM: %.3f, KFAC: %.3f, UPDAT: %.3f', np.mean(iotimes), np.mean(fwbwtimes), np.mean(commtimes), np.mean(kfactimes), np.mean(uptimes))
+            iotimes=[];fwbwtimes=[];kfactimes=[];commtimes=[];uptimes=[]
+            avg_time = 0.0
 
     if args.verbose:
-        #logger.info('kfac_update_freq:{}, fac_update_freq:{}'.format(preconditioner.kfac_update_freq, preconditioner.fac_update_freq))
         logger.info("[%d] epoch train loss: %.4f, acc: %.3f" % (epoch, train_loss.avg.item(), 100*train_accuracy.avg.item()))
 
     for scheduler in lr_scheduler:
@@ -276,11 +305,12 @@ def test(epoch, model, criterion, test_loader, args):
             test_accuracy.update(accuracy(output, target))
             
     if args.verbose:
-        logger.info("[%d][0] evaluation loss: %.4f, acc: %.3f" % (epoch, test_loss.avg.item(), 100*test_accuracy.avg.item()))
+        logger.info("[%d] evaluation loss: %.4f, acc: %.3f" % (epoch, test_loss.avg.item(), 100*test_accuracy.avg.item()))
 
 
 if __name__ == '__main__':
-    #torch.multiprocessing.set_start_method('spawn')
+    torch.multiprocessing.set_start_method('spawn')
+    #torch.multiprocessing.set_start_method('forkserver')
 
     args = initialize()
 
@@ -290,9 +320,12 @@ if __name__ == '__main__':
     start = time.time()
 
     for epoch in range(args.epochs):
+        stime = time.time()
         train(epoch, model, optimizer, preconditioner, lr_scheduler, criterion, train_sampler, train_loader, args)
-        test(epoch, model, criterion, test_loader, args)
+        #if args.verbose:
+            #logger.info("[%d] epoch train time: %.3f"%(epoch, time.time() - stime))
+        #test(epoch, model, criterion, test_loader, args)
 
     if args.verbose:
-        logger.info("Training time: %s", str(datetime.timedelta(seconds=time.time() - start)))
+        logger.info("Total Training Time: %s", str(datetime.timedelta(seconds=time.time() - start)))
 

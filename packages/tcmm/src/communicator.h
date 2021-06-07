@@ -49,6 +49,7 @@ public:
 	//void allReduce(const void* sendbuff, void* recvbuff, int size);
 //std::vector<torch::Tensor> tcmm_symeig(torch::Tensor a) {
 	void allReduce(torch::Tensor tensor);
+	void reduce(torch::Tensor tensor, int root);
 	//void multiBcast(vector<torch::Tensor> &tensor_list, void (*op)(torch::Tensor));
 	void multiBcast(vector<torch::Tensor> &tensor_list, vector<torch::Tensor> &output_list, const std::function<void(torch::Tensor, torch::Tensor)> &op);
     void synchronize();

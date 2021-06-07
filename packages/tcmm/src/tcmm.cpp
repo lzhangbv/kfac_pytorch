@@ -37,6 +37,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         .def(py::init<int, int>())
         .def("allReduce", &Communicator::allReduce)
         .def("multiBcast", &Communicator::multiBcast)
+        .def("reduce", &Communicator::reduce)
         .def("synchronize", &Communicator::synchronize)
         .def("__repr__", [](const Communicator &a) { return "Communicator"; });
 

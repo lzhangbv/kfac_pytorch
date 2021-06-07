@@ -21,6 +21,7 @@ def _fit_linear_function(x, y):
 def model_bcast_log():
     fn='logs/nccl-bcast-n16IB.log'
     #fn='logs/nccl-bcast-n64.log'
+    #fn='~/LinZ/kfac_pytorch/packages/nccl-tests/nccl-allreduce-32-100GbIB-RTX2080ti.log'
     sizes, comms, errors = reader.read_times_from_nccl_log(fn, start=1024, end=1024*1024*512, original=True)
     print('sizes: ', sizes)
     print('comms: ', comms)
