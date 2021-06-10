@@ -277,8 +277,8 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, criterion, trai
         avg_time += (time.time()-stime)
             
         if (batch_idx + 1) % display == 0:
-            #if False:
-            if args.verbose:
+            if False:
+            #if args.verbose:
                 logger.info("[%d][%d] time: %.3f, speed: %.3f images/s" % (epoch, batch_idx, avg_time/display, args.batch_size/(avg_time/display)))
                 logger.info('Profiling: IO: %.3f, FW+BW: %.3f, COMM: %.3f, KFAC: %.3f, UPDAT: %.3f', np.mean(iotimes), np.mean(fwbwtimes), np.mean(commtimes), np.mean(kfactimes), np.mean(uptimes))
             iotimes=[];fwbwtimes=[];kfactimes=[];commtimes=[];uptimes=[]
@@ -322,9 +322,9 @@ if __name__ == '__main__':
     for epoch in range(args.epochs):
         stime = time.time()
         train(epoch, model, optimizer, preconditioner, lr_scheduler, criterion, train_sampler, train_loader, args)
-        #if args.verbose:
-            #logger.info("[%d] epoch train time: %.3f"%(epoch, time.time() - stime))
-        #test(epoch, model, criterion, test_loader, args)
+        if args.verbose:
+            logger.info("[%d] epoch train time: %.3f"%(epoch, time.time() - stime))
+        test(epoch, model, criterion, test_loader, args)
 
     if args.verbose:
         logger.info("Total Training Time: %s", str(datetime.timedelta(seconds=time.time() - start)))

@@ -25,5 +25,6 @@ fi
 
 $MPIPATH/bin/mpirun --oversubscribe --prefix $MPIPATH -np $nworkers -hostfile cluster${nworkers} -bind-to none -map-by slot \
     $params \
-    $PY scripts/test_allgather.py
+    $PY packages/tcmm/tests/test_comm.py
+#    $PY scripts/test_allgather.py
 #    $PY scripts/bench_ops.py

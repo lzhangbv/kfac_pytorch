@@ -77,7 +77,7 @@ class KFAC(optim.Optimizer):
                  batch_averaged=True,
                  diag_blocks=1,
                  diag_warmup=0,
-                 distribute_layer_factors=None,
+                 distribute_layer_factors=False,
                  sparse=False,
                  sparse_ratio=0.01,
                  exclude_parts=''):
@@ -149,16 +149,13 @@ class KFAC(optim.Optimizer):
         self.exclude_communicate_factor = True if exclude_parts.find('CommunicateFactor') >=0 else False
         self.exclude_compute_factor = True if exclude_parts.find('ComputeFactor') >=0 else False
         
-        # Compute ideal value for `distribute_layer_factors` based on
-        # registered module count
-        if distribute_layer_factors is None:
-            self.distribute_layer_factors = True \
-                    if hvd.size() > len(self.modules) else False
-        else:
-            self.distribute_layer_factors = distribute_layer_factors
+        self.distribute_layer_factors = distribute_layer_factors
 
         self.eps = 1e-10  # for numerical stability
         self.rank_iter = cycle(list(range(hvd.size())))
+        
+        # assign factors on workers to compute inverse
+        self._generate_module_ranks()
 
     def set_hook_enabled(self, mode=True):
         self.hook_enabled = mode
@@ -173,6 +170,28 @@ class KFAC(optim.Optimizer):
         if self.hook_enabled and self.steps % self.fac_update_freq == 0:
             self.m_g[module] = grad_output[0].data
 
+    def _compute_forward_factor(self, module, input):
+        """Hook for computing and communicating forward factor"""
+        if self.hook_enabled and torch.is_grad_enabled() and self.steps % self.fac_update_freq == 0:
+            self.m_a[module] = input[0].data
+            if not self.exclude_compute_factor:
+                self._update_module_A(module)
+            if not self.exclude_communicate_factor:
+                if hvd.size() > 1:
+                    rank_a, rank_g = self.module_ranks[module]
+                    self.communicator.reduce(self.m_A[module].data, rank_a)
+
+    def _compute_backward_factor(self, module, grad_input, grad_output):
+        """Hook for computing and communicating backward factor"""
+        if self.hook_enabled and self.steps % self.fac_update_freq == 0:
+            self.m_g[module] = grad_output[0].data
+            if not self.exclude_compute_factor:
+                self._update_module_G(module)
+            if not self.exclude_communicate_factor:
+                if hvd.size() > 1:
+                    rank_a, rank_g = self.module_ranks[module]
+                    self.communicator.reduce(self.m_G[module].data, rank_g)
+
     def _register_modules(self, model):
         """Register hooks to all supported layers in the model"""
         name_idx = 0
@@ -180,8 +199,8 @@ class KFAC(optim.Optimizer):
             classname = module.__class__.__name__
             if classname in self.known_modules:
                 self.modules.append(module)
-                module.register_forward_pre_hook(self._save_input)
-                module.register_backward_hook(self._save_grad_output)
+                module.register_forward_pre_hook(self._compute_forward_factor)
+                module.register_backward_hook(self._compute_backward_factor)
                 module_name = 'module_name_%s_%d' % (classname, name_idx)
                 self.module_names.append(module_name)
                 name_idx += 1
@@ -324,18 +343,17 @@ class KFAC(optim.Optimizer):
         updates = {}
         handles = []
 
-        # assign factors on workers to compute inverse
-        self._generate_module_ranks()
+        # synchronize forward and backward factors
+        if (self.steps % self.fac_update_freq == 0) and (not self.exclude_communicate_factor) and (hvd.size() > 1):
+            self.communicator.synchronize()
+            for m in self.modules:
+                rank_a, rank_g = self.module_ranks[m]
+                if hvd.rank() == rank_a:
+                    self.m_A[m] = self.m_A[m].data / hvd.size()
+                if hvd.rank() == rank_g:
+                    self.m_G[m] = self.m_G[m].data / hvd.size()
 
-        if self.steps % self.fac_update_freq == 0:
-            if not self.exclude_compute_factor:
-                self._update_A()
-                self._update_G()
-            if not self.exclude_communicate_factor:
-                if hvd.size() > 1:
-                    self._reduce_factors()
-                    #self._allreduce_factors()
-
+        # compute and communicate inverse factors
         if self.steps % self.kfac_update_freq == 0:
             for module in self.modules:
                 rank_a, rank_g = self.module_ranks[module]
