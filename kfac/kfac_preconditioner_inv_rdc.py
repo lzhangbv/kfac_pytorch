@@ -13,9 +13,13 @@ from kfac.utils import get_block_boundary
 from kfac.utils import sparsification
 import logging
 import tcmm
+import time
 import torchsso
 
 logger = logging.getLogger()
+
+estimate_time_A = [0.00013175010681152344, 0.0011579513549804688, 0.0011622905731201172, 0.001163339614868164, 0.0011631011962890624, 0.0011394977569580077, 0.0008266210556030273, 0.000829005241394043, 0.0008294343948364258, 0.0008281707763671875, 0.0008249759674072265, 0.0008289337158203125, 0.0008284330368041992, 0.0008333921432495117, 0.0008373737335205078, 0.0008400678634643555, 0.0008365631103515625, 0.0008355617523193359, 0.000834512710571289, 0.0008332252502441407, 0.006051778793334961, 0.006056976318359375, 0.006056952476501465, 0.006049537658691406, 0.006057143211364746, 0.006056356430053711, 0.006053018569946289, 0.006051158905029297, 0.006050491333007812, 0.006055474281311035, 0.006048965454101563, 0.006051397323608399, 0.006054568290710449, 0.0060559272766113285, 0.006066560745239258, 0.006073403358459473, 0.006061959266662598, 0.006053304672241211, 0.03182971477508545, 0.03203625679016113, 0.032034444808959964, 0.03211054801940918, 0.032068943977355956, 0.032073044776916505, 0.03207738399505615, 0.032068395614624025, 0.03203463554382324, 0.03205530643463135, 0.03205585479736328, 0.032103443145751955, 0.03206741809844971, 0.032056117057800294, 0.032047080993652347, 0.032123994827270505, 0.03212919235229492, 0.0003176212310791016]
+estimate_time_G = [0.00015666484832763672, 0.00014612674713134765, 0.00014829635620117188, 0.00016701221466064453, 0.00023555755615234375, 0.00023458003997802734, 0.00023586750030517577, 0.00023624897003173828, 0.00014681816101074218, 0.00014879703521728516, 0.00014846324920654298, 0.00014934539794921874, 0.0001502513885498047, 0.00014581680297851563, 0.00014772415161132813, 0.00014641284942626954, 0.0001462697982788086, 0.00014600753784179687, 0.00014696121215820312, 0.00018224716186523437, 0.000179290771484375, 0.0001822948455810547, 0.0001821279525756836, 0.00017876625061035155, 0.00017430782318115235, 0.0001788616180419922, 0.00018439292907714843, 0.00016841888427734374, 0.00018928050994873046, 0.00018115043640136718, 0.00017838478088378907, 0.0001840353012084961, 0.00021533966064453126, 0.0001862049102783203, 0.0001873493194580078, 0.00019392967224121093, 0.00018782615661621093, 0.0002820253372192383, 0.0002731800079345703, 0.00027272701263427737, 0.0002585411071777344, 0.000267481803894043, 0.0002699851989746094, 0.00027697086334228517, 0.0002799272537231445, 0.00028808116912841796, 0.00027093887329101565, 0.0002554655075073242, 0.00030405521392822265, 0.00027341842651367186, 0.0002665519714355469, 0.00025577545166015624, 0.00025708675384521483, 0.0002652406692504883, 0.0002630710601806641, 0.00010921955108642579] 
 
 
 class KFAC(optim.Optimizer):
@@ -324,29 +328,35 @@ class KFAC(optim.Optimizer):
         updates = {}
         handles = []
 
-        # assign factors on workers to compute inverse
-        self._generate_module_ranks()
-
         if self.steps % self.fac_update_freq == 0:
             if not self.exclude_compute_factor:
                 self._update_A()
                 self._update_G()
+        
+        # assign factors on workers to compute inverse
+        self._generate_module_ranks()
+        #self._generate_uniform_ranks()
+        
+        if self.steps % self.fac_update_freq == 0:
             if not self.exclude_communicate_factor:
                 if hvd.size() > 1:
                     self._reduce_factors()
                     #self._allreduce_factors()
 
         if self.steps % self.kfac_update_freq == 0:
-            for module in self.modules:
+            stime = time.time()
+            for i, module in enumerate(self.modules):
                 rank_a, rank_g = self.module_ranks[module]
 
                 if not self.exclude_compute_inverse:
                     self._update_inverse_A(module, rank_a)
                     self._update_inverse_G(module, rank_g)
-
+            logger.info("Step: inverse comp time %s on worker %s", time.time()-stime, hvd.rank())
+            
             if not self.exclude_communicate_inverse:
                 if hvd.size() > 1:
                     self._broadcast_inverse_factors()
+            logger.info("Step: inverse comp+comm time %s on worker %s", time.time()-stime, hvd.rank())
 
         for i, module in enumerate(self.modules):
             grad = self._get_grad(module)
@@ -360,23 +370,116 @@ class KFAC(optim.Optimizer):
 
         self.steps += 1
 
+    def _get_factor_shape(self):
+        shape_A = []
+        shape_G = []
+        for module in self.modules:
+            if module.__class__.__name__ == 'Linear':
+                dim_A = module.in_features
+                dim_G = module.out_features
+            elif module.__class__.__name__ == 'Conv2d':
+                dim_A = module.in_channels * np.prod(module.kernel_size)
+                dim_G = module.out_channels
+            if module.bias is not None:
+                dim_A += 1
+            shape_A.append(dim_A)
+            shape_G.append(dim_G)
+        return shape_A, shape_G
+        
     def _generate_module_ranks(self):
         if self.module_ranks is not None:
             return self.module_ranks
         
-        self.rank_iter.reset() 
+        self.rank_iter.reset()
+        curr_rank = 0
         module_ranks = {}
 
-        for module in self.modules:
+        buckets = [0] * hvd.size()
+        shape_A = [self.m_A[module].shape[1] for module in self.modules]
+        shape_G = [self.m_G[module].shape[1] for module in self.modules]
+        # shape_A, shape_G = self._get_factor_shape()
+        if hvd.rank() == 0:
+            logger.info('module_shape of A:%s', shape_A)
+            logger.info('module_shape of G:%s', shape_G)
+
+        assigned_rank = 0
+        for i, module in enumerate(self.modules):
             ranks_a = self.rank_iter.next(1)
+            #ranks_g = self.rank_iter.next(1)
             ranks_g = self.rank_iter.next(1) if self.distribute_layer_factors else ranks_a
+            
+            # debug: three-layer a group
+            #if i > 0 and i % 14 == 0:
+            #    assigned_rank += 1
+            #    assigned_rank %= hvd.size()
+            #ranks_a = (assigned_rank, )
+            #ranks_g = (assigned_rank, )
+
             module_ranks[module] = (ranks_a[0], ranks_g[0])
+            buckets[ranks_a[0]] += shape_A[i]
+            buckets[ranks_g[0]] += shape_G[i]
         
         self.module_ranks = module_ranks
 
         if hvd.rank() == 0:
             logger.info('module_ranks: %s', module_ranks.values())
+            logger.info('buckets: %s', buckets)
     
+    def _generate_uniform_ranks(self):
+        if self.module_ranks is not None:
+            return self.module_ranks
+
+        module_ranks = {}
+        buckets = [0] * hvd.size()
+        dimensions = []
+        module_factors = []
+        for i, m in enumerate(self.modules):
+            name = self.module_names[i]
+            a_dimension = self.m_A[m].shape[1]
+            g_dimension = self.m_G[m].shape[1]
+            #a_dimension = estimate_time_A[i]
+            #g_dimension = estimate_time_G[i]
+
+            #if hvd.rank() == 0:
+            #    logger.info('A Name: %s, shape: %s', m, self.m_A[m].shape)
+            #    logger.info('G Name: %s, shape: %s', m, self.m_G[m].shape)
+            dimensions.append(a_dimension)
+            module_factors.append(name+'-A')
+            dimensions.append(g_dimension)
+            module_factors.append(name+'-G')
+
+        descending_sorted_idx = np.argsort(dimensions)[::-1]
+        A_ranks = {}
+        G_ranks = {}
+        bi = 0
+        
+        for i in descending_sorted_idx:
+            factor = module_factors[i]
+            dimension = dimensions[i]
+            
+            m_i = self.module_names.index(factor[0:-2])
+            m = self.modules[m_i]
+
+            bi = np.argmin(buckets)
+            load = dimension * dimension # square
+            buckets[bi] += load
+            
+            if factor[-1] == 'A':
+                A_ranks[m] = bi
+            else:
+                G_ranks[m] = bi
+
+        for m in self.modules:
+            module_ranks[m] = (A_ranks[m], G_ranks[m])
+
+        self.module_ranks = module_ranks
+
+        if hvd.rank() == 0:
+            logger.info('module_ranks: %s', module_ranks.values())
+            logger.info('buckets: %s', buckets)
+
+        return module_ranks
+
     def _reduce_factors(self):
         #raise NotImplementedError("Reduce op is not implemented by Horovod.")
         
