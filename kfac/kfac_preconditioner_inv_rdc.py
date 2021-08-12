@@ -340,6 +340,7 @@ class KFAC(optim.Optimizer):
         if self.steps % self.fac_update_freq == 0:
             if not self.exclude_communicate_factor:
                 if hvd.size() > 1:
+                    #self._reduce_symmetric_factors()
                     self._reduce_factors()
                     #self._allreduce_factors()
 
@@ -351,12 +352,12 @@ class KFAC(optim.Optimizer):
                 if not self.exclude_compute_inverse:
                     self._update_inverse_A(module, rank_a)
                     self._update_inverse_G(module, rank_g)
-            logger.info("Step: inverse comp time %s on worker %s", time.time()-stime, hvd.rank())
+            #logger.info("Step: inverse comp time %s on worker %s", time.time()-stime, hvd.rank())
             
             if not self.exclude_communicate_inverse:
                 if hvd.size() > 1:
                     self._broadcast_inverse_factors()
-            logger.info("Step: inverse comp+comm time %s on worker %s", time.time()-stime, hvd.rank())
+            #logger.info("Step: inverse comp+comm time %s on worker %s", time.time()-stime, hvd.rank())
 
         for i, module in enumerate(self.modules):
             grad = self._get_grad(module)
@@ -478,7 +479,32 @@ class KFAC(optim.Optimizer):
             logger.info('module_ranks: %s', module_ranks.values())
             logger.info('buckets: %s', buckets)
 
-        return module_ranks
+        return module_ranks    
+    
+    def _triu_vectorization(self, tensor):
+        triu_ind = torch.triu_indices(tensor.shape[0], tensor.shape[1])
+        triu_vector = tensor[triu_ind[0], triu_ind[1]]
+        return triu_ind, triu_vector
+
+    def _reduce_symmetric_factors(self):
+        for m in self.modules:
+            rank_a, rank_g = self.module_ranks[m]
+            # vectorization
+            triu_ind_a, triu_vector_a = self._triu_vectorization(self.m_A[m].data)
+            triu_ind_g, triu_vector_g = self._triu_vectorization(self.m_G[m].data)
+            # reduce
+            self.communicator.reduce(triu_vector_a, rank_a)
+            self.communicator.reduce(triu_vector_g, rank_g)
+            self.communicator.synchronize()
+            # recovery
+            if hvd.rank() == rank_a:
+                triu_vector_a.div_(hvd.size())
+                triu_vector_g.div_(hvd.size())
+                self.m_A[m][triu_ind_a[0], triu_ind_a[1]] = triu_vector_a
+                self.m_A[m][triu_ind_a[1], triu_ind_a[0]] = triu_vector_a
+                self.m_G[m][triu_ind_g[0], triu_ind_g[1]] = triu_vector_g
+                self.m_G[m][triu_ind_g[1], triu_ind_g[0]] = triu_vector_g
+
 
     def _reduce_factors(self):
         #raise NotImplementedError("Reduce op is not implemented by Horovod.")
