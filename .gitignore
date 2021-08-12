@@ -4,7 +4,8 @@ kfac-logs/
 kfac-logs
 sbatch_logs/
 saved_logs/
-
+data/
+output/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
