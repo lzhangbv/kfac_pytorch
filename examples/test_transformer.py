@@ -38,7 +38,7 @@ from utils import *
 from torchtext.data import Field, Dataset, BucketIterator
 import transformer.Constants as Constants
 from transformer.Models import Transformer
-from transformer.Optim import ScheduledOptim
+from transformer.Optim import LrScheduler
 
 import kfac
 os.environ['HOROVOD_NUM_NCCL_STREAMS'] = '1' 
@@ -48,30 +48,42 @@ def initialize():
     parser = argparse.ArgumentParser()
 
     # training settings
-    parser.add_argument('-data_pkl', default=None)     # all-in-1 data pickle
+    parser.add_argument('--data-pkl', default=None)     # all-in-1 data pickle
 
-    parser.add_argument('-epoch', type=int, default=200)
-    parser.add_argument('-b', '--batch_size', type=int, default=256)
+    parser.add_argument('--epoch', type=int, default=200)
+    parser.add_argument('--batch-size', type=int, default=256)
 
-    parser.add_argument('-d_model', type=int, default=512)
-    parser.add_argument('-d_inner_hid', type=int, default=2048)
-    parser.add_argument('-d_k', type=int, default=64)
-    parser.add_argument('-d_v', type=int, default=64)
+    parser.add_argument('--d-model', type=int, default=512)
+    parser.add_argument('--d-inner-hid', type=int, default=2048)
+    parser.add_argument('--d-k', type=int, default=64)
+    parser.add_argument('--d-v', type=int, default=64)
 
-    parser.add_argument('-n_head', type=int, default=8)
-    parser.add_argument('-n_layers', type=int, default=6)
-    parser.add_argument('-warmup','--n_warmup_steps', type=int, default=4000)
-    parser.add_argument('-lr_mul', type=float, default=2.0)
-    parser.add_argument('-label_smoothing', action='store_true')
+    parser.add_argument('--n-head', type=int, default=8)
+    parser.add_argument('--n-layers', type=int, default=6)
+    parser.add_argument('--n-warmup-steps', type=int, default=4000)
+    parser.add_argument('--lr-mul', type=float, default=2.0)
+    parser.add_argument('--label-smoothing', action='store_true')
 
-    parser.add_argument('-dropout', type=float, default=0.1)
-    parser.add_argument('-embs_share_weight', action='store_true')
-    parser.add_argument('-proj_share_weight', action='store_true')
-    parser.add_argument('-scale_emb_or_prj', type=str, default='prj')
+    parser.add_argument('--dropout', type=float, default=0.1)
+    parser.add_argument('--embs-share-weight', action='store_true')
+    parser.add_argument('--proj-share-weight', action='store_true')
+    parser.add_argument('--scale-emb-or-prj', type=str, default='prj')
 
-    parser.add_argument('-output_dir', type=str, default=None)
-    parser.add_argument('-use_tb', action='store_true')
-    parser.add_argument('-save_mode', type=str, choices=['all', 'best'], default='best')
+    parser.add_argument('--output-dir', type=str, default=None)
+    parser.add_argument('--use-tb', action='store_true')
+    parser.add_argument('--save-mode', type=str, choices=['all', 'best'], default='best')
+
+    # SGD Parameters
+    parser.add_argument('--base-lr', type=float, default=0.1, metavar='LR',
+                        help='base learning rate (default: 0.1)')
+    #parser.add_argument('--lr-decay', nargs='+', type=int, default=[100, 150],
+    #                    help='epoch intervals to decay lr')
+    parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
+                        help='SGD momentum (default: 0.9)')
+    parser.add_argument('--weight-decay', type=float, default=5e-4, metavar='W',
+                        help='SGD weight decay (default: 5e-4)')
+    #parser.add_argument('--warmup-epochs', type=int, default=5, metavar='WE',
+    #                    help='number of warmup epochs (default: 5)')
 
     # KFAC Parameters
     parser.add_argument('--kfac-name', type=str, default='inverse',
@@ -105,7 +117,7 @@ def initialize():
                               'None to determine automatically based on worker and '
                               'layer count.')
 
-    parser.add_argument('-no_cuda', action='store_true')
+    parser.add_argument('--no-cuda', action='store_true')
     parser.add_argument('--seed', type=int, default=42, help='random seed')
 
     args = parser.parse_args()
@@ -161,15 +173,26 @@ def prepare_dataloaders(args):
     train = Dataset(examples=data['train'], fields=fields)
     val = Dataset(examples=data['valid'], fields=fields)
 
-    train_iterator = BucketIterator(train, batch_size=batch_size, train=True)
+    # todo: how to shuffle at each epoch, while keep the train_iterator same on different workers ?
+    train_iterator = BucketIterator(train, batch_size=batch_size, train=True) #, shuffle=False) # so that the length of src and trg is fixed?
     val_iterator = BucketIterator(val, batch_size=batch_size)
 
-    # split train_iterator for distributed training
+    # convert the train_iterator to divisible list for distributed training
     divisible_size = math.ceil(len(train_iterator) / hvd.size()) * hvd.size()
     train_set = [next(itertools.cycle(train_iterator)) for _ in range(divisible_size)]
-    train_subset = train_set[hvd.rank():divisible_size:hvd.size()]
 
-    return train_subset, val_iterator
+    return train_set, val_iterator
+
+def distribute_dataset(dataset, rank, size, seed):
+    total_size = len(dataset)
+    # shuffle
+    g = torch.Generator()
+    g.manual_seed(seed)
+    indices = torch.randperm(len(dataset), generator=g).tolist()
+    # distribute
+    indices = indices[rank:total_size:size]
+    subset = [dataset[i] for i in indices]
+    return subset
 
 def patch_src(src, pad_idx):
     src = src.transpose(0, 1)
@@ -201,11 +224,12 @@ def get_model(args):
     if args.cuda:
         model.cuda()
 
-    optimizer = ScheduledOptim(
-        optim.Adam(model.parameters(), betas=(0.9, 0.98), eps=1e-09),
-        args.lr_mul, args.d_model, args.n_warmup_steps)
-
-    if args.kfac_update_freq > 0:
+    # optimizer 
+    if args.kfac_update_freq == 0:   # use Adam
+        optimizer = optim.Adam(model.parameters(), betas=(0.9, 0.98), eps=1e-09)
+        preconditioner = None
+    else:
+        optimizer = optim.SGD(model.parameters(), lr=args.base_lr, momentum=args.momentum, weight_decay=args.weight_decay)
         KFAC = kfac.get_kfac_module(args.kfac_name)
         preconditioner = KFAC(
                 model, lr=args.base_lr, factor_decay=args.stat_decay,
@@ -214,16 +238,16 @@ def get_model(args):
                 kfac_update_freq=args.kfac_update_freq,
                 diag_blocks=args.diag_blocks,
                 diag_warmup=args.diag_warmup,
-                distribute_layer_factors=args.distribute_layer_factors, exclude_parts=args.exclude_parts)
-        kfac_param_scheduler = kfac.KFACParamScheduler(
-                preconditioner,
-                damping_alpha=args.damping_alpha,
-                damping_schedule=args.damping_decay,
-                update_freq_alpha=args.kfac_update_freq_alpha,
-                update_freq_schedule=args.kfac_update_freq_decay,
-                start_epoch=args.resume_from_epoch)
-    else:
-        preconditioner = None
+                distribute_layer_factors=args.distribute_layer_factors, 
+                exclude_parts=args.exclude_parts,
+                exclude_vocabulary_size=args.trg_vocab_size)
+        
+        #kfac_param_scheduler = kfac.KFACParamScheduler(
+        #        preconditioner,
+        #        damping_alpha=args.damping_alpha,
+        #        damping_schedule=args.damping_decay,
+        #        update_freq_alpha=args.kfac_update_freq_alpha,
+        #        update_freq_schedule=args.kfac_update_freq_decay)
 
     optimizer = hvd.DistributedOptimizer(
             optimizer, named_parameters=model.named_parameters(),
@@ -233,7 +257,10 @@ def get_model(args):
         hvd.broadcast_optimizer_state(optimizer, root_rank=0)
         hvd.broadcast_parameters(model.state_dict(), root_rank=0)
 
-    return model, optimizer, preconditioner
+    # learning rate schedule
+    lr_scheduler = LrScheduler(optimizer, args.lr_mul, args.d_model, args.n_warmup_steps)
+
+    return model, optimizer, preconditioner, lr_scheduler
 
 
 def cal_performance(pred, gold, trg_pad_idx, smoothing=False):
@@ -244,8 +271,8 @@ def cal_performance(pred, gold, trg_pad_idx, smoothing=False):
     pred = pred.max(1)[1]
     gold = gold.contiguous().view(-1)
     non_pad_mask = gold.ne(trg_pad_idx)
-    n_correct = pred.eq(gold).masked_select(non_pad_mask).sum().item()
-    n_word = non_pad_mask.sum().item()
+    n_correct = pred.eq(gold).masked_select(non_pad_mask).sum()
+    n_word = non_pad_mask.sum()
 
     return loss, n_correct, n_word
 
@@ -270,14 +297,20 @@ def cal_loss(pred, gold, trg_pad_idx, smoothing=False):
         loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
     return loss
 
-def train(epoch, model, optimizer, preconditioner, train_subset, args):
+def train(epoch, model, optimizer, preconditioner, lr_scheduler, train_set, args):
     model.train()
     train_loss = Metric('train_loss')
-    train_accuracy = Metric('train_accuracy')
+    train_total_word = Metric('train_total_word')
+    train_correct_word = Metric('train_correct_word')
     
     avg_time = 0.0
     display = 1
 
+    # get train_subset
+    train_subset = distribute_dataset(train_set, hvd.rank(), hvd.size(), args.seed + epoch)
+    #if args.verbose:
+    #print(args.seed + epoch)
+    
     for batch_idx, batch in enumerate(train_subset):
         stime = time.time()
 
@@ -298,11 +331,13 @@ def train(epoch, model, optimizer, preconditioner, train_subset, args):
         
         with torch.no_grad():
             train_loss.update(loss)
-            train_accuracy.update(n_correct / n_word)
+            train_total_word.update(n_word)
+            train_correct_word.update(n_correct)
 
         # backward and update parameters
         loss.backward()
-
+        lr_scheduler.step() # schedule learning rate at each iteration
+        
         optimizer.synchronize()
 
         if preconditioner is not None:
@@ -318,7 +353,7 @@ def train(epoch, model, optimizer, preconditioner, train_subset, args):
         #         logger.info("[%d][%d] time: %.3f, speed: %.3f samples/s" % (epoch, batch_idx, avg_time/display, args.batch_size/(avg_time/display)))
 
     if args.verbose:
-        logger.info("[%d] epoch train loss: %.4f, acc: %.3f" % (epoch, train_loss.avg.item(), 100*train_accuracy.avg.item()))
+        logger.info("[%d] epoch train loss: %.4f, acc: %.3f" % (epoch, train_loss.avg.item(), 100 * train_correct_word.sum.item() / train_total_word.sum.item()))
 
 
 def validate(epoch, model, val_iterator, args):
@@ -341,45 +376,33 @@ def validate(epoch, model, val_iterator, args):
                 pred, gold, args.trg_pad_idx, smoothing=False)
 
             # note keeping
-            n_word_total += n_word
-            n_word_correct += n_correct
+            n_word_total += n_word.item()
+            n_word_correct += n_correct.item()
             total_loss += loss.item()         
      
-    loss_per_word = total_loss/n_word_total
-    accuracy = n_word_correct/n_word_total
+    loss_per_word = total_loss / n_word_total
+    accuracy = n_word_correct / n_word_total
 
     ppl = math.exp(min(loss_per_word, 100))
 
     if args.verbose:
-        logger.info("[%d] epoch evaluation loss: %.4f, ppl: %.4f, acc: %.3f" % (epoch, loss_per_word, ppl, 100*accuracy))
+        logger.info("[%d] epoch evaluation loss: %.4f, ppl: %.4f, acc: %.3f" % (epoch, loss_per_word, ppl, 100 * accuracy))
     
     
-
-
-
-def main():
-    ''' 
-    Usage:
-    python train.py -data_pkl m30k_deen_shr.pkl -log m30k_deen_shr -embs_share_weight -proj_share_weight -label_smoothing -output_dir output -b 256 -warmup 128000
-    '''
-
+if __name__ ==  '__main__':
     torch.multiprocessing.set_start_method('spawn')
     args = initialize()
 
-    train_subset, val_iterator = prepare_dataloaders(args)
+    train_set, val_iterator = prepare_dataloaders(args)
 
-    print(len(train_subset)) # test
-
-    model, optimizer, preconditioner = get_model(args)
-    
-    if args.verbose:
-        logger.info("MODEL: %s", args.model)    
-
+    model, optimizer, preconditioner, lr_scheduler = get_model(args)
+   
     start = time.time()
 
-    for epoch in range(args.epochs):
-        train(epoch, model, optimizer, preconditioner, train_subset, args)
+    for epoch in range(args.epoch):
+        train(epoch, model, optimizer, preconditioner, lr_scheduler, train_set, args)
         validate(epoch, model, val_iterator, args)
 
     if args.verbose:
         logger.info("\nTraining time: %s", str(timedelta(seconds=time.time() - start)))
+

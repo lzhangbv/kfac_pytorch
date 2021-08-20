@@ -1,9 +1,9 @@
 # Example:
-# gpu=0 lr_mul=2 scale_emb_or_prj=prj bash train_multi30k_de_en.sh
+# gpu=0 lr_mul=2 scale_emb_or_prj=prj bash train_multi30k_de_en_single.sh
 # The better setting is:
-# gpu=0 lr_mul=0.5 scale_emb_or_prj=emb bash train_multi30k_de_en.sh
+# gpu=0 lr_mul=0.5 scale_emb_or_prj=emb bash train_multi30k_de_en_single.sh
 
-CUDA_VISIBLE_DEVICES=${gpu} python examples/pytorch_multi30k_de_en_transformer.py \
+CUDA_VISIBLE_DEVICES=${gpu} python examples/pytorch_multi30k_de_en_transformer_single.py \
 -data_pkl data/m30k_deen_shr.pkl \
 -label_smoothing \
 -proj_share_weight \
