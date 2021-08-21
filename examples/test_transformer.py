@@ -6,6 +6,7 @@ import itertools
 from datetime import datetime, timedelta
 import argparse
 import os
+import random
 import math
 import sys
 import warnings
@@ -151,7 +152,6 @@ def initialize():
 
     return args
 
-
 def prepare_dataloaders(args):
     batch_size = args.batch_size
     data = pickle.load(open(args.data_pkl, 'rb'))
@@ -172,26 +172,23 @@ def prepare_dataloaders(args):
 
     train = Dataset(examples=data['train'], fields=fields)
     val = Dataset(examples=data['valid'], fields=fields)
+    # print(train.examples[0].src)
 
-    # todo: how to shuffle at each epoch, while keep the train_iterator same on different workers ?
-    train_iterator = BucketIterator(train, batch_size=batch_size, train=True) #, shuffle=False) # so that the length of src and trg is fixed?
+    random.seed(args.seed)
+    train_iterator = BucketIterator(train, batch_size=batch_size, train=True, shuffle=True) # its random_shuffler uses random's state
     val_iterator = BucketIterator(val, batch_size=batch_size)
+    return train_iterator, val_iterator
 
-    # convert the train_iterator to divisible list for distributed training
-    divisible_size = math.ceil(len(train_iterator) / hvd.size()) * hvd.size()
-    train_set = [next(itertools.cycle(train_iterator)) for _ in range(divisible_size)]
-
-    return train_set, val_iterator
-
-def distribute_dataset(dataset, rank, size, seed):
-    total_size = len(dataset)
-    # shuffle
-    g = torch.Generator()
-    g.manual_seed(seed)
-    indices = torch.randperm(len(dataset), generator=g).tolist()
+def distribute_dataset(train_iterator, rank, size, seed):
+    total_size = math.ceil(len(train_iterator) / hvd.size()) * hvd.size() # make the set evenly divisible
+    
+    # set shuffle state to make it reproducible
+    random.seed(seed)
+    train_set = [next(itertools.cycle(train_iterator)) for _ in range(total_size)]
+    # print(len(train_set))
+    
     # distribute
-    indices = indices[rank:total_size:size]
-    subset = [dataset[i] for i in indices]
+    subset = train_set[rank:total_size:size]
     return subset
 
 def patch_src(src, pad_idx):
@@ -297,7 +294,7 @@ def cal_loss(pred, gold, trg_pad_idx, smoothing=False):
         loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
     return loss
 
-def train(epoch, model, optimizer, preconditioner, lr_scheduler, train_set, args):
+def train(epoch, model, optimizer, preconditioner, lr_scheduler, train_iterator, args):
     model.train()
     train_loss = Metric('train_loss')
     train_total_word = Metric('train_total_word')
@@ -307,9 +304,8 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, train_set, args
     display = 1
 
     # get train_subset
-    train_subset = distribute_dataset(train_set, hvd.rank(), hvd.size(), args.seed + epoch)
-    #if args.verbose:
-    #print(args.seed + epoch)
+    train_subset = distribute_dataset(train_iterator, hvd.rank(), hvd.size(), args.seed + epoch)
+    # print(len(train_subset))
     
     for batch_idx, batch in enumerate(train_subset):
         stime = time.time()
@@ -393,14 +389,14 @@ if __name__ ==  '__main__':
     torch.multiprocessing.set_start_method('spawn')
     args = initialize()
 
-    train_set, val_iterator = prepare_dataloaders(args)
+    train_iterator, val_iterator = prepare_dataloaders(args)
 
     model, optimizer, preconditioner, lr_scheduler = get_model(args)
    
     start = time.time()
 
     for epoch in range(args.epoch):
-        train(epoch, model, optimizer, preconditioner, lr_scheduler, train_set, args)
+        train(epoch, model, optimizer, preconditioner, lr_scheduler, train_iterator, args)
         validate(epoch, model, val_iterator, args)
 
     if args.verbose:
