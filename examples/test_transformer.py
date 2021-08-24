@@ -37,9 +37,11 @@ from utils import *
 
 # torchtext and transformer
 from torchtext.data import Field, Dataset, BucketIterator
+from torchtext.data.metrics import bleu_score
 import transformer.Constants as Constants
 from transformer.Models import Transformer
 from transformer.Optim import LrScheduler
+from transformer.Translator import Translator
 
 import kfac
 os.environ['HOROVOD_NUM_NCCL_STREAMS'] = '1' 
@@ -156,13 +158,20 @@ def prepare_dataloaders(args):
     batch_size = args.batch_size
     data = pickle.load(open(args.data_pkl, 'rb'))
 
+    # data settings
     args.max_token_seq_len = data['settings'].max_len
     args.src_pad_idx = data['vocab']['src'].vocab.stoi[Constants.PAD_WORD]
+    args.src_unk_idx = data['vocab']['src'].vocab.stoi[Constants.UNK_WORD]
     args.trg_pad_idx = data['vocab']['trg'].vocab.stoi[Constants.PAD_WORD]
+    args.trg_bos_idx = data['vocab']['trg'].vocab.stoi[Constants.BOS_WORD]
+    args.trg_eos_idx = data['vocab']['trg'].vocab.stoi[Constants.EOS_WORD]
 
     args.src_vocab_size = len(data['vocab']['src'].vocab)
     args.trg_vocab_size = len(data['vocab']['trg'].vocab)
-
+    
+    args.src_stoi = data['vocab']['src'].vocab.stoi # stoi -> translator
+    args.trg_itos = data['vocab']['trg'].vocab.itos # itos -> sentence
+    
     #========= Preparing Model =========#
     if args.embs_share_weight:
         assert data['vocab']['src'].vocab.stoi == data['vocab']['trg'].vocab.stoi, \
@@ -174,18 +183,16 @@ def prepare_dataloaders(args):
     val = Dataset(examples=data['valid'], fields=fields)
     # print(train.examples[0].src)
 
-    random.seed(args.seed)
-    train_iterator = BucketIterator(train, batch_size=batch_size, train=True, shuffle=True) # its random_shuffler uses random's state
+    random.seed(args.seed)  # set the random state to make it reproducible
+    train_iterator = BucketIterator(train, batch_size=batch_size, train=True, shuffle=True) # its inside random_shuffler uses the random's state
     val_iterator = BucketIterator(val, batch_size=batch_size)
-    return train_iterator, val_iterator
+    return train_iterator, val_iterator, val
 
-def distribute_dataset(train_iterator, rank, size, seed):
+def distribute_dataset(train_iterator, rank, size):
     total_size = math.ceil(len(train_iterator) / hvd.size()) * hvd.size() # make the set evenly divisible
-    
-    # set shuffle state to make it reproducible
-    random.seed(seed)
     train_set = [next(itertools.cycle(train_iterator)) for _ in range(total_size)]
     # print(len(train_set))
+    # print(train_set[0:2])
     
     # distribute
     subset = train_set[rank:total_size:size]
@@ -199,6 +206,7 @@ def patch_trg(trg, pad_idx):
     trg = trg.transpose(0, 1)
     trg, gold = trg[:, :-1], trg[:, 1:].contiguous().view(-1)
     return trg, gold
+
 
 def get_model(args):
     model = Transformer(
@@ -218,8 +226,18 @@ def get_model(args):
         dropout=args.dropout,
         scale_emb_or_prj=args.scale_emb_or_prj)
 
+    translator = Translator(
+        model=model,
+        beam_size=5,
+        max_seq_len=100,
+        src_pad_idx=args.src_pad_idx,
+        trg_pad_idx=args.trg_pad_idx,
+        trg_bos_idx=args.trg_bos_idx,
+        trg_eos_idx=args.trg_eos_idx)
+
     if args.cuda:
         model.cuda()
+        translator.cuda()
 
     # optimizer 
     if args.kfac_update_freq == 0:   # use Adam
@@ -257,20 +275,20 @@ def get_model(args):
     # learning rate schedule
     lr_scheduler = LrScheduler(optimizer, args.lr_mul, args.d_model, args.n_warmup_steps)
 
-    return model, optimizer, preconditioner, lr_scheduler
+    return model, translator, optimizer, preconditioner, lr_scheduler
 
 
 def cal_performance(pred, gold, trg_pad_idx, smoothing=False):
     ''' Apply label smoothing if needed '''
+    # pred shape: [batch_size * n_words, vocabulary_size], gold length: batch_size * n_words
 
     loss = cal_loss(pred, gold, trg_pad_idx, smoothing=smoothing)
-
-    pred = pred.max(1)[1]
-    gold = gold.contiguous().view(-1)
+    pred = pred.max(1)[1]               # predict labels
+    gold = gold.contiguous().view(-1)   # target labels
+    
     non_pad_mask = gold.ne(trg_pad_idx)
     n_correct = pred.eq(gold).masked_select(non_pad_mask).sum()
     n_word = non_pad_mask.sum()
-
     return loss, n_correct, n_word
 
 
@@ -294,6 +312,7 @@ def cal_loss(pred, gold, trg_pad_idx, smoothing=False):
         loss = F.cross_entropy(pred, gold, ignore_index=trg_pad_idx, reduction='sum')
     return loss
 
+
 def train(epoch, model, optimizer, preconditioner, lr_scheduler, train_iterator, args):
     model.train()
     train_loss = Metric('train_loss')
@@ -304,7 +323,7 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, train_iterator,
     display = 1
 
     # get train_subset
-    train_subset = distribute_dataset(train_iterator, hvd.rank(), hvd.size(), args.seed + epoch)
+    train_subset = distribute_dataset(train_iterator, hvd.rank(), hvd.size())
     # print(len(train_subset))
     
     for batch_idx, batch in enumerate(train_subset):
@@ -349,12 +368,13 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, train_iterator,
         #         logger.info("[%d][%d] time: %.3f, speed: %.3f samples/s" % (epoch, batch_idx, avg_time/display, args.batch_size/(avg_time/display)))
 
     if args.verbose:
-        logger.info("[%d] epoch train loss: %.4f, acc: %.3f" % (epoch, train_loss.avg.item(), 100 * train_correct_word.sum.item() / train_total_word.sum.item()))
+        logger.info("[%d] epoch train loss: %.4f, acc: %.3f" % (epoch, train_loss.sum.item() / train_total_word.sum.item(), 100 * train_correct_word.sum.item() / train_total_word.sum.item()))
 
 
 def validate(epoch, model, val_iterator, args):
     model.eval()
     total_loss, n_word_total, n_word_correct = 0, 0, 0
+    candidate_corpus, references_corpus = [], []
 
     with torch.no_grad():
         for batch_idx, batch in enumerate(val_iterator):
@@ -374,30 +394,53 @@ def validate(epoch, model, val_iterator, args):
             # note keeping
             n_word_total += n_word.item()
             n_word_correct += n_correct.item()
-            total_loss += loss.item()         
+            total_loss += loss.item()
      
     loss_per_word = total_loss / n_word_total
     accuracy = n_word_correct / n_word_total
-
     ppl = math.exp(min(loss_per_word, 100))
 
     if args.verbose:
         logger.info("[%d] epoch evaluation loss: %.4f, ppl: %.4f, acc: %.3f" % (epoch, loss_per_word, ppl, 100 * accuracy))
+
+
+def calculate_bleu(epoch, translator, val_dataset, args):
+    pred_corpus = []
+    ref_corpus = []
+    for example in val_dataset:
+        # translate
+        src_seq = [args.src_stoi.get(word, args.src_unk_idx) for word in example.src]
+        if args.cuda:
+            pred_seq = translator.translate_sentence(torch.LongTensor([src_seq]).cuda())
+        else:
+            pred_seq = translator.translate_sentence(torch.LongTensor([src_seq]))
+        pred_sen = [args.trg_itos[idx] for idx in pred_seq]
+        # print(pred_sen)
+        # print(example.trg)
+        
+        # append into corpus
+        pred_corpus.append(pred_sen[1:-1])    # cut off BOS and EOS
+        ref_corpus.append([example.trg])
+    bleu = bleu_score(pred_corpus, ref_corpus)
     
-    
+    if args.verbose:                                                                                                                                                                                    
+        logger.info("[%d] epoch evaluation bleu score: %.3f" % (epoch, 100 * bleu))
+
+
 if __name__ ==  '__main__':
     torch.multiprocessing.set_start_method('spawn')
     args = initialize()
 
-    train_iterator, val_iterator = prepare_dataloaders(args)
+    train_iterator, val_iterator, val_dataset = prepare_dataloaders(args)
 
-    model, optimizer, preconditioner, lr_scheduler = get_model(args)
+    model, translator, optimizer, preconditioner, lr_scheduler = get_model(args)
    
     start = time.time()
 
     for epoch in range(args.epoch):
         train(epoch, model, optimizer, preconditioner, lr_scheduler, train_iterator, args)
         validate(epoch, model, val_iterator, args)
+    calculate_bleu(epoch, translator, val_dataset, args)
 
     if args.verbose:
         logger.info("\nTraining time: %s", str(timedelta(seconds=time.time() - start)))
