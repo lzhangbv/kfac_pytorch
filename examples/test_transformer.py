@@ -138,7 +138,7 @@ def initialize():
 
     cudnn.benchmark = True
 
-    logfile = './logs/debug_multi30k_transformer_kfac{}_gpu{}_bs{}_{}.log'.format(args.kfac_update_freq, hvd.size(), args.batch_size, args.kfac_name)
+    logfile = './logs/debug_multi30k_transformer_epoch{}_warmup{}_lr{}_kfac{}_gpu{}_bs{}_{}.log'.format(args.epoch, args.n_warmup_steps, args.lr_mul, args.kfac_update_freq, hvd.size(), args.batch_size, args.kfac_name)
     hdlr = logging.FileHandler(logfile)
     hdlr.setFormatter(formatter)
     logger.addHandler(hdlr) 

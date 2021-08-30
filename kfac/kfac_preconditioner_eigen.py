@@ -76,6 +76,7 @@ class KFAC(optim.Optimizer):
                  distribute_layer_factors=None,
                  sparse=False,
                  sparse_ratio=0.01,
+                 exclude_vocabulary_size=None,
                  exclude_parts=''):
 
         if not 0.0 <= lr:
@@ -110,6 +111,7 @@ class KFAC(optim.Optimizer):
         self.computeA = ComputeA()
         self.computeG = ComputeG()
         self.known_modules = {'Linear', 'Conv2d'}
+        self.exclude_vocabulary_size = exclude_vocabulary_size
         self.modules = []
         self.module_names = []
         self._register_modules(model)
@@ -163,6 +165,9 @@ class KFAC(optim.Optimizer):
         for module in model.modules():
             classname = module.__class__.__name__
             if classname in self.known_modules:
+                if self.exclude_vocabulary_size is not None and classname == 'Linear' and module.out_features == self.exclude_vocabulary_size:
+                    # print("skip precondioning of the pre-softmax layer in the Transformer")
+                    continue
                 self.modules.append(module)
                 module.register_forward_pre_hook(self._save_input)
                 module.register_backward_hook(self._save_grad_output)

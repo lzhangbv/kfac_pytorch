@@ -7,6 +7,7 @@ batch_size="${batch_size:-128}"
 lr_mul="${lr_mul:-1}"
 # lr_decay="${lr_decay:-20 35 45}"
 warmup="${warmup:-4000}"
+scale_emb_or_prj="${scale_emb_or_prj:-prj}"
 
 kfac="${kfac:-1}"
 kfac_name="${kfac_name:-inverse}"
@@ -40,4 +41,5 @@ $MPIPATH/bin/mpirun --oversubscribe --prefix $MPIPATH -np $nworkers -hostfile cl
     $params \
     $PY examples/test_transformer.py \
         --epoch $epochs --batch-size $batch_size  --lr-mul $lr_mul --n-warmup-steps $warmup --kfac-update-freq $kfac --stat-decay $stat_decay --damping $damping --kfac-name $kfac_name --exclude-parts ${exclude_parts} \
-        --data-pkl data/m30k_deen_shr.pkl --label-smoothing --proj-share-weight --embs-share-weight
+        --data-pkl data/m30k_deen_shr.pkl --label-smoothing --proj-share-weight --scale-emb-or-prj $scale_emb_or_prj
+# --embs-share-weight 
