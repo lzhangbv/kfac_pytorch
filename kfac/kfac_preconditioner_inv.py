@@ -129,6 +129,7 @@ class KFAC(optim.Optimizer):
         self.m_a, self.m_g = {}, {}
         self.m_A, self.m_G = {}, {}
         self.m_inv_A, self.m_inv_G = {}, {}
+        self.m_precon_grad = {}
         self.module_ranks = None
 
         self.sparse = sparse
@@ -150,11 +151,12 @@ class KFAC(optim.Optimizer):
         
         # Compute ideal value for `distribute_layer_factors` based on
         # registered module count
-        if distribute_layer_factors is None:
-            self.distribute_layer_factors = True \
-                    if hvd.size() > len(self.modules) else False
-        else:
-            self.distribute_layer_factors = distribute_layer_factors
+        #if distribute_layer_factors is None:
+        #    self.distribute_layer_factors = True \
+        #            if hvd.size() > len(self.modules) else False
+        #else:
+        #    self.distribute_layer_factors = distribute_layer_factors
+        self.distribute_layer_factors = False
 
         self.eps = 1e-10  # for numerical stability
         self.rank_iter = cycle(list(range(hvd.size())))
@@ -253,7 +255,8 @@ class KFAC(optim.Optimizer):
             grad = torch.cat([grad, module.bias.grad.data.view(-1, 1)], 1)
         return grad
 
-    def _get_preconditioned_grad(self, module, grad):
+    #def _get_preconditioned_grad(self, module, grad):
+    def _reshape_preconditioned_grad(self, module, v):
         """Precondition gradient of module
         
         Args:
@@ -263,10 +266,10 @@ class KFAC(optim.Optimizer):
         Returns:
           preconditioned gradient with same shape as `grad`
         """
-        if not self.exclude_compute_factor:
-            v = self.m_inv_G[module] @ grad @ self.m_inv_A[module]
-        else:
-            v = grad
+        #if not self.exclude_compute_factor:
+        #    v = self.m_inv_G[module] @ grad @ self.m_inv_A[module]
+        #else:
+        #    v = grad
 
         if module.bias is not None:
             v = [v[:, :-1], v[:, -1:]]
@@ -287,7 +290,8 @@ class KFAC(optim.Optimizer):
         """
         vg_sum = 0
         for module in self.modules:
-            v = updates[module]
+            #v = updates[module]
+            v = self._reshape_preconditioned_grad(module, updates[module])
             vg_sum += (v[0] * module.weight.grad.data * self.lr ** 2).sum().item()
             if module.bias is not None:
                 vg_sum += (v[1] * module.bias.grad.data * self.lr ** 2).sum().item()
@@ -297,7 +301,8 @@ class KFAC(optim.Optimizer):
             nu = min(1.0, math.sqrt(self.kl_clip / abs(vg_sum)))
 
         for module in self.modules:
-            v = updates[module]
+            #v = updates[module]
+            v = self._reshape_preconditioned_grad(module, updates[module])
             module.weight.grad.data.copy_(v[0])
             module.weight.grad.data.mul_(nu)
             if module.bias is not None:
@@ -328,6 +333,7 @@ class KFAC(optim.Optimizer):
 
         updates = {}
         handles = []
+        precon_first = True # communicate preconditioned gradient if True
 
         if self.steps % self.fac_update_freq == 0:
             if not self.exclude_compute_factor:
@@ -352,16 +358,31 @@ class KFAC(optim.Optimizer):
                     self._update_inverse_A(module, rank_a)
                     self._update_inverse_G(module, rank_g)
 
-            if not self.exclude_communicate_inverse:
-                if hvd.size() > 1:
-                    self._broadcast_inverse_factors()
+            if not precon_first:
+                if not self.exclude_communicate_inverse:
+                    if hvd.size() > 1:
+                        self._broadcast_inverse_factors()
 
         for i, module in enumerate(self.modules):
             grad = self._get_grad(module)
-            precon_grad = self._get_preconditioned_grad(module, grad)
-            updates[module] = precon_grad
+            if not self.exclude_compute_factor:
+                precon_grad = self.m_inv_G[module] @ grad @ self.m_inv_A[module]
+            else:
+                precon_grad = grad
+            self.m_precon_grad[module] = precon_grad
+        
+        if precon_first:
+            if not self.exclude_communicate_inverse:
+                if hvd.size() > 1:
+                    self._broadcast_precon_grads()
+        self._update_scale_grad(self.m_precon_grad)
+        
+        #for i, module in enumerate(self.modules):
+        #    grad = self._get_grad(module)
+        #    precon_grad = self._get_preconditioned_grad(module, grad)
+        #    updates[module] = precon_grad
 
-        self._update_scale_grad(updates)
+        #self._update_scale_grad(updates)
 
         self.steps += 1
 
@@ -448,6 +469,21 @@ class KFAC(optim.Optimizer):
             h = hvd.broadcast_async_(self.m_inv_A[m], rank_a, name=name+'inverseA')
             handles.append(h)
             h = hvd.broadcast_async_(self.m_inv_G[m], rank_g, name=name+'inverseG')
+            handles.append(h)
+    
+        for handle in handles:
+            hvd.synchronize(handle)
+
+    def _broadcast_precon_grads(self):
+        handles = []
+
+        for i, m in enumerate(self.modules):
+            rank_a, rank_g = self.module_ranks[m]
+            assert rank_a == rank_g
+            name = self.module_names[i]
+            v = self.m_precon_grad[m]
+
+            h = hvd.broadcast_async_(v, rank_a, name=name+'preconGrad')
             handles.append(h)
     
         for handle in handles:

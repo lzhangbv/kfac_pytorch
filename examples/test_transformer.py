@@ -79,14 +79,18 @@ def initialize():
     # SGD Parameters
     parser.add_argument('--base-lr', type=float, default=0.1, metavar='LR',
                         help='base learning rate (default: 0.1)')
-    #parser.add_argument('--lr-decay', nargs='+', type=int, default=[100, 150],
-    #                    help='epoch intervals to decay lr')
+    parser.add_argument('--lr-decay', nargs='+', type=int, default=[100, 150],
+                        help='epoch intervals to decay lr')
+    parser.add_argument('--lr-decay-alpha', type=float, default=0.5,
+                        help='learning rate decay factor (default: 0.5)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                         help='SGD momentum (default: 0.9)')
     parser.add_argument('--weight-decay', type=float, default=5e-4, metavar='W',
                         help='SGD weight decay (default: 5e-4)')
-    #parser.add_argument('--warmup-epochs', type=int, default=5, metavar='WE',
-    #                    help='number of warmup epochs (default: 5)')
+    parser.add_argument('--warmup-epochs', type=int, default=5, metavar='WE',
+                        help='number of warmup epochs (default: 5)')
+    parser.add_argument('--use-adam', type=int, default=1, 
+                        help='use adam and its corresponding learnign rate schedule (default: 1)')
 
     # KFAC Parameters
     parser.add_argument('--kfac-name', type=str, default='inverse',
@@ -138,7 +142,10 @@ def initialize():
 
     cudnn.benchmark = True
 
-    logfile = './logs/debug_multi30k_transformer_epoch{}_warmup{}_lr{}_kfac{}_gpu{}_bs{}_{}.log'.format(args.epoch, args.n_warmup_steps, args.lr_mul, args.kfac_update_freq, hvd.size(), args.batch_size, args.kfac_name)
+    if args.use_adam:
+        logfile = './logs/debug_multi30k_transformer{}_epoch{}_warmup{}_lr{}_kfac{}_gpu{}_bs{}_{}.log'.format(args.n_layers, args.epoch, args.n_warmup_steps, args.lr_mul, args.kfac_update_freq, hvd.size(), args.batch_size, args.kfac_name)
+    else:
+        logfile = './logs/debug_multi30k_transformer{}_epoch{}_lr{}_decay{}_kfac{}_gpu{}_bs{}_{}.log'.format(args.n_layers, args.epoch, args.base_lr, args.lr_decay, args.kfac_update_freq, hvd.size(), args.batch_size, args.kfac_name)
     hdlr = logging.FileHandler(logfile)
     hdlr.setFormatter(formatter)
     logger.addHandler(hdlr) 
@@ -240,10 +247,15 @@ def get_model(args):
         translator.cuda()
 
     # optimizer 
-    if args.kfac_update_freq == 0:   # use Adam
-        optimizer = optim.Adam(model.parameters(), betas=(0.9, 0.98), eps=1e-09)
+    if args.kfac_update_freq == 0:
+        if args.use_adam:
+            optimizer = optim.Adam(model.parameters(), betas=(0.9, 0.98), eps=1e-09) # use Adam
+        else:
+            args.base_lr = args.base_lr * hvd.size() 
+            optimizer = optim.SGD(model.parameters(), lr=args.base_lr, momentum=args.momentum, weight_decay=args.weight_decay) # use SGD
         preconditioner = None
     else:
+        args.base_lr = args.base_lr * hvd.size()
         optimizer = optim.SGD(model.parameters(), lr=args.base_lr, momentum=args.momentum, weight_decay=args.weight_decay)
         KFAC = kfac.get_kfac_module(args.kfac_name)
         preconditioner = KFAC(
@@ -272,8 +284,12 @@ def get_model(args):
         hvd.broadcast_optimizer_state(optimizer, root_rank=0)
         hvd.broadcast_parameters(model.state_dict(), root_rank=0)
 
-    # learning rate schedule
-    lr_scheduler = LrScheduler(optimizer, args.lr_mul, args.d_model, args.n_warmup_steps)
+    # Learning Rate Schedule
+    if args.use_adam:
+        lr_scheduler = LrScheduler(optimizer, args.lr_mul, args.d_model, args.n_warmup_steps)
+    else:
+        lrs = create_lr_schedule(hvd.size(), args.warmup_epochs, args.lr_decay, args.lr_decay_alpha)
+        lr_scheduler = LambdaLR(optimizer, lrs)
 
     return model, translator, optimizer, preconditioner, lr_scheduler
 
@@ -351,7 +367,8 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, train_iterator,
 
         # backward and update parameters
         loss.backward()
-        lr_scheduler.step() # schedule learning rate at each iteration
+        if args.use_adam:
+            lr_scheduler.step() # schedule learning rate at each iteration
         
         optimizer.synchronize()
 
@@ -369,6 +386,12 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, train_iterator,
 
     if args.verbose:
         logger.info("[%d] epoch train loss: %.4f, acc: %.3f" % (epoch, train_loss.sum.item() / train_total_word.sum.item(), 100 * train_correct_word.sum.item() / train_total_word.sum.item()))
+
+    if not args.use_adam:
+        lr_scheduler.step() # schedule learning rate at each epoch
+    else:
+        if args.verbose:
+            logger.info("[%d] epoch [%d] iteration" % (epoch, lr_scheduler.n_steps))
 
 
 def validate(epoch, model, val_iterator, args):

@@ -137,6 +137,11 @@ class KFAC(optim.Optimizer):
         self.diag_warmup = diag_warmup
         self.batch_averaged = batch_averaged
         
+        self.exclude_communicate_inverse = True if exclude_parts.find('CommunicateInverse') >=0 else False
+        self.exclude_compute_inverse = True if exclude_parts.find('ComputeInverse') >=0 else False
+        self.exclude_communicate_factor = True if exclude_parts.find('CommunicateFactor') >=0 else False
+        self.exclude_compute_factor = True if exclude_parts.find('ComputeFactor') >=0 else False
+
         # Compute ideal value for `distribute_layer_factors` based on
         # registered module count
         if distribute_layer_factors is None:
@@ -345,10 +350,13 @@ class KFAC(optim.Optimizer):
         Returns:
           preconditioned gradient with same shape as `grad`
         """
-        v1 = self.m_QG[module].t() @ grad @ self.m_QA[module]
-        v2 = v1 / (self.m_dG[module].unsqueeze(1) * self.m_dA[module].unsqueeze(0) + 
-                   self.damping)
-        v = self.m_QG[module] @ v2 @ self.m_QA[module].t()
+        if not self.exclude_compute_factor:
+            v1 = self.m_QG[module].t() @ grad @ self.m_QA[module]
+            v2 = v1 / (self.m_dG[module].unsqueeze(1) * self.m_dA[module].unsqueeze(0) + 
+                    self.damping)
+            v = self.m_QG[module] @ v2 @ self.m_QA[module].t()
+        else:
+            v = grad
 
         if module.bias is not None:
             v = [v[:, :-1], v[:, -1:]]
@@ -373,7 +381,11 @@ class KFAC(optim.Optimizer):
             vg_sum += (v[0] * module.weight.grad.data * self.lr ** 2).sum().item()
             if module.bias is not None:
                 vg_sum += (v[1] * module.bias.grad.data * self.lr ** 2).sum().item()
-        nu = min(1.0, math.sqrt(self.kl_clip / abs(vg_sum)))
+        
+        if self.exclude_communicate_inverse:
+            nu = 1
+        else:
+            nu = min(1.0, math.sqrt(self.kl_clip / abs(vg_sum)))
 
         for module in self.modules:
             v = updates[module]
@@ -417,13 +429,15 @@ class KFAC(optim.Optimizer):
             diag_blocks = self.diag_blocks if epoch >= self.diag_warmup else 1
 
         if self.steps % self.fac_update_freq == 0:
-            self._update_A()
-            self._update_G()
-            if hvd.size() > 1:
-                if self.sparse:
-                    self._allgather_factors()
-                else:
-                    self._allreduce_factors()
+            if not self.exclude_compute_factor:
+                self._update_A()
+                self._update_G()
+            if not self.exclude_communicate_factor:
+                if hvd.size() > 1:
+                    if self.sparse:
+                        self._allgather_factors()
+                    else:
+                        self._allreduce_factors()
 
         # if we are switching from no diag approx to approx, we need to clear
         # off-block-diagonal elements
@@ -445,11 +459,13 @@ class KFAC(optim.Optimizer):
                 ranks_g = self.rank_iter.next(n) if self.distribute_layer_factors \
                                                  else ranks_a
 
-                self._update_eigen_A(module, ranks_a)
-                self._update_eigen_G(module, ranks_g)
+                if not self.exclude_compute_inverse:
+                    self._update_eigen_A(module, ranks_a)
+                    self._update_eigen_G(module, ranks_g)
 
-            if hvd.size() > 1:
-                self._allreduce_eigendecomp()
+            if not self.exclude_communicate_inverse:
+                if hvd.size() > 1:
+                    self._allreduce_eigendecomp()
 
         for module in self.modules:
             grad = self._get_grad(module)

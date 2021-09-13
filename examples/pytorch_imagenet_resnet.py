@@ -359,7 +359,8 @@ def train(epoch, model, optimizer, preconditioner, lr_schedules, lrs,
                 avg_time = 0.0
             if batch_idx > 120:
                 break
-        logger.info("[%d] epoch train loss: %.4f, acc: %.3f" % (epoch, train_loss.avg.item(), 100*train_accuracy.avg.item()))
+        if args.verbose:
+            logger.info("[%d] epoch train loss: %.4f, acc: %.3f" % (epoch, train_loss.avg.item(), 100*train_accuracy.avg.item()))
 
     if not STEP_FIRST:
         for scheduler in lr_schedules:

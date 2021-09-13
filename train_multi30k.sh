@@ -4,13 +4,20 @@ rdma="${rdma:-1}"
 
 epochs="${epochs:-200}"
 batch_size="${batch_size:-128}"
-lr_mul="${lr_mul:-1}"
-# lr_decay="${lr_decay:-20 35 45}"
+
+use_adam="${use_adam:-1}"
+lr_mul="${lr_mul:-0.5}"
 warmup="${warmup:-4000}"
-scale_emb_or_prj="${scale_emb_or_prj:-prj}"
+
+base_lr="${base_lr:-0.000001}"
+lr_decay="${lr_decay:-200}"
+warmup_epochs="${warmup_epochs:-5}"
+
+scale_emb_or_prj="${scale_emb_or_prj:-emb}"
+n_layers="${n_layers:-6}"
 
 kfac="${kfac:-1}"
-kfac_name="${kfac_name:-inverse}"
+kfac_name="${kfac_name:-eigen}"
 stat_decay="${stat_decay:-0.95}"
 damping="${damping:-0.003}"
 exclude_parts="${exclude_parts:-''}"
@@ -40,6 +47,6 @@ fi
 $MPIPATH/bin/mpirun --oversubscribe --prefix $MPIPATH -np $nworkers -hostfile cluster${nworkers} -bind-to none -map-by slot \
     $params \
     $PY examples/test_transformer.py \
-        --epoch $epochs --batch-size $batch_size  --lr-mul $lr_mul --n-warmup-steps $warmup --kfac-update-freq $kfac --stat-decay $stat_decay --damping $damping --kfac-name $kfac_name --exclude-parts ${exclude_parts} \
-        --data-pkl data/m30k_deen_shr.pkl --label-smoothing --proj-share-weight --scale-emb-or-prj $scale_emb_or_prj
+        --epoch $epochs --batch-size $batch_size  --lr-mul $lr_mul --n-warmup-steps $warmup --base-lr $base_lr --warmup-epochs $warmup_epochs --lr-decay $lr_decay --kfac-update-freq $kfac --stat-decay $stat_decay --damping $damping --kfac-name $kfac_name --exclude-parts ${exclude_parts} \
+        --data-pkl data/m30k_deen_shr.pkl --label-smoothing --proj-share-weight --scale-emb-or-prj $scale_emb_or_prj --n-layers $n_layers --use-adam $use_adam
 # --embs-share-weight 
