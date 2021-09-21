@@ -17,6 +17,7 @@ scale_emb_or_prj="${scale_emb_or_prj:-emb}"
 n_layers="${n_layers:-6}"
 
 kfac="${kfac:-1}"
+fac="${fac:-1}"
 kfac_name="${kfac_name:-eigen}"
 stat_decay="${stat_decay:-0.95}"
 damping="${damping:-0.003}"
@@ -47,6 +48,6 @@ fi
 $MPIPATH/bin/mpirun --oversubscribe --prefix $MPIPATH -np $nworkers -hostfile cluster${nworkers} -bind-to none -map-by slot \
     $params \
     $PY examples/test_transformer.py \
-        --epoch $epochs --batch-size $batch_size  --lr-mul $lr_mul --n-warmup-steps $warmup --base-lr $base_lr --warmup-epochs $warmup_epochs --lr-decay $lr_decay --kfac-update-freq $kfac --stat-decay $stat_decay --damping $damping --kfac-name $kfac_name --exclude-parts ${exclude_parts} \
+        --epoch $epochs --batch-size $batch_size  --lr-mul $lr_mul --n-warmup-steps $warmup --base-lr $base_lr --warmup-epochs $warmup_epochs --lr-decay $lr_decay --kfac-update-freq $kfac --kfac-cov-update-freq $fac --stat-decay $stat_decay --damping $damping --kfac-name $kfac_name --exclude-parts ${exclude_parts} \
         --data-pkl data/m30k_deen_shr.pkl --label-smoothing --proj-share-weight --scale-emb-or-prj $scale_emb_or_prj --n-layers $n_layers --use-adam $use_adam
 # --embs-share-weight 

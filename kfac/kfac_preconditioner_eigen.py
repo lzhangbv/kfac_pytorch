@@ -171,7 +171,7 @@ class KFAC(optim.Optimizer):
             classname = module.__class__.__name__
             if classname in self.known_modules:
                 if self.exclude_vocabulary_size is not None and classname == 'Linear' and module.out_features == self.exclude_vocabulary_size:
-                    # print("skip precondioning of the pre-softmax layer in the Transformer")
+                    #print("skip precondioning of the pre-softmax layer in the Transformer")
                     continue
                 self.modules.append(module)
                 module.register_forward_pre_hook(self._save_input)
@@ -179,6 +179,8 @@ class KFAC(optim.Optimizer):
                 module_name = 'module_name_%s_%d' % (classname, name_idx)
                 self.module_names.append(module_name)
                 name_idx += 1
+        #print("debug,  #register modules:", name_idx)
+        #print("register modules:", self.modules)
 
     def _init_A(self, factor, module):
         """Initialize memory for factor A and its eigendecomp"""
