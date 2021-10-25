@@ -197,8 +197,9 @@ class ComputeA:
     def linear(a, layer):
         # a: batch_size * num_word * in_dim, in the Transformer
         if len(a.shape) > 2:
-            a = a.view(-1, a.size(-1))
-        
+            #print(a.size())
+            # a = a.view(-1, a.size(-1)) # unfold dim of num_word
+            a = torch.mean(a, 1)         # average dim of num_word
         # a: batch_size * in_dim
         batch_size = a.size(0)
         #if len(a.shape) > 2:
@@ -305,7 +306,8 @@ class ComputeG:
     def linear(g, layer, batch_averaged):
         # g: batch_size * num_word * out_dim, in the Transformer
         if len(g.shape) > 2:
-            g = g.reshape(-1, g.size(-1))
+            # g = g.reshape(-1, g.size(-1)) # unfold
+            g = torch.mean(g, 1)            # average
         # g: batch_size * out_dim
         batch_size = g.size(0)
         #if len(g.shape) > 2:

@@ -8,7 +8,7 @@ from transformer.Modules import ScaledDotProductAttention
 
 __author__ = "Yu-Hsiang Huang"
 
-class NonSepMultiHeadAttention(nn.Module):
+class MultiHeadAttention(nn.Module):
     ''' Multi-Head Attention module '''
 
     def __init__(self, n_head, d_model, d_k, d_v, dropout=0.1):
@@ -61,7 +61,7 @@ class NonSepMultiHeadAttention(nn.Module):
         return q, attn
 
 
-class MultiHeadAttention(nn.Module):
+class SepMultiHeadAttention(nn.Module):
     ''' Multi-Head Attention module: multi-heads use n_head separate linear layers '''
 
     def __init__(self, n_head, d_model, d_k, d_v, dropout=0.1):
