@@ -1,0 +1,217 @@
+import math
+import torch
+import torch.optim as optim
+import horovod.torch as hvd
+import numpy as np
+from horovod.torch.mpi_ops import allgather_async
+
+from kfac.utils import (ComputeA, ComputeG)
+from kfac.utils import update_running_avg
+from kfac.utils import try_contiguous
+from kfac.utils import cycle
+from kfac.utils import get_block_boundary
+from kfac.utils import sparsification
+import logging
+import tcmm
+import torchsso
+
+logger = logging.getLogger()
+
+
+class KFAC(optim.Optimizer):
+    """KFAC Distributed Gradient Preconditioner
+    
+    Usage:
+      optimizer = optim.SGD(model.parameters(), ...)
+      optimizer = hvd.DistributedOptimizer(optimizer, ...)
+      preconditioner = KFAC(model, ...)
+      ... 
+      for i, (data, target) in enumerate(train_loader):
+          optimizer.zero_grad()
+          output = model(data)
+          loss = criterion(output, target)
+          loss.backward()
+          optimizer.synchronize()
+          preconditioner.step()
+          with optimizer.skip_synchronize():
+              optimizer.step()
+
+    Args:
+      model (nn): Torch model
+      lr (float): learning rate (default: 0.1)
+      damping (float): Tikhonov damping parameter (default: 0.001)
+      fac_update_freq (int): iterations between update KFs (default: 1)
+      kfac_update_freq (int): iterations between update inverse gradient (default: 1)
+      communicate_inverse_or_not (bool): choose to communicate inverse KFs or communicate preconditioned gradients
+      kl_clip (float): clipping parameter for gradient scaling
+      factor_decay (float): running average coefficient for KFs
+      exclude_vocabulary_size: exclude the pre-softmax linear layer in the Transformer
+      hook_enabled (bool): enable the hook events to save the immediate states (a and g)
+      exclude_parts='': exclude CommunicateInverse,ComputeInverse,CommunicateFactor,ComputeFactor for time breakdowns
+    """
+    def __init__(self,
+                 model,
+                 lr=0.1,
+                 damping=0.001,
+                 fac_update_freq=1,
+                 kfac_update_freq=1,
+                 communicate_inverse_or_not=True,
+                 kl_clip=0.001,
+                 factor_decay=0.95,
+                 exclude_vocabulary_size=None,
+                 hook_enabled=True,
+                 exclude_parts=''):
+
+        # For compatibility with `KFACParamScheduler`
+        defaults = dict(lr=lr,
+                        damping=damping,
+                        fac_update_freq=fac_update_freq,
+                        kfac_update_freq=kfac_update_freq) 
+
+        super(KFAC, self).__init__(model.parameters(), defaults)
+
+        self.communicate_inverse_or_not = communicate_inverse_or_not
+        self.kl_clip = kl_clip
+        self.factor_decay = factor_decay
+        self.exclude_vocabulary_size = exclude_vocabulary_size
+        self.hook_enabled = hook_enabled
+
+        self.exclude_communicate_inverse = True if exclude_parts.find('CommunicateInverse') >=0 else False
+        self.exclude_compute_inverse = True if exclude_parts.find('ComputeInverse') >=0 else False
+        self.exclude_communicate_factor = True if exclude_parts.find('CommunicateFactor') >=0 else False
+        self.exclude_compute_factor = True if exclude_parts.find('ComputeFactor') >=0 else False
+        
+        # register hooks
+        self.modules = []
+        self.module_names = []
+        self._register_modules(model)
+
+        # dictionaries keyed by `module` to storing KFs, inverse KFs, etc
+        self.m_a, self.m_g = {}, {}
+        self.m_A, self.m_G = {}, {}
+        self.m_inv_A, self.m_inv_G = {}, {}
+        self.m_precon_grad = {}
+        self.module_ranks = None
+
+        self.eps = 1e-10  # for numerical stability
+        self.steps = 0
+
+    ### Register hooks
+    def set_hook_enabled(self, mode=True):
+        self.hook_enabled = mode
+
+    def _forward_hook_event(self, module, input):
+        """Default: hook for saving input (a)"""
+        if self.hook_enabled and torch.is_grad_enabled() and self.steps % self.fac_update_freq == 0:
+            self.m_a[module] = input[0].data
+
+    def _backward_hook_event(self, module, grad_input, grad_output):
+        """Default: hook for saving gradient w.r.t output (g)"""
+        if self.hook_enabled and self.steps % self.fac_update_freq == 0:
+            self.m_g[module] = grad_output[0].data
+
+    def _register_hooks(self, model):
+        """Register forard/backward hooks to supported modules"""
+        supported_modules = {'Linear', 'Conv2d'}
+        name_idx = 0
+        for module in model.modules():
+            classname = module.__class__.__name__
+            if classname in supported_modules:
+                if self.exclude_vocabulary_size is not None and classname == 'Linear' and module.out_features == self.exclude_vocabulary_size:
+                    continue # exclude the pre-softmax linear layer in the Transformer model
+                self.modules.append(module)
+                module.register_forward_pre_hook(self._forward_hook_event)
+                module.register_backward_hook(self._backward_hook_event)
+                module_name = 'module_name_%s_%d' % (classname, name_idx)
+                self.module_names.append(module_name)
+                name_idx += 1
+
+    ### Schedule KFs
+    def _get_module_KF_shape(self, module):
+        """Get module Kronecker factor shapes, support Lineaer and Conv2d only"""
+        if module.__class__.__name__ == 'Linear':
+            dim_A = module.in_features
+            dim_G = module.out_features
+        elif module.__class__.__name__ == 'Conv2d':
+            dim_A = module.in_channels * np.prod(module.kernel_size)
+            dim_G = module.out_channels
+        if module.bias is not None:
+            dim_A += 1
+        return dim_A, dim_G
+
+    @abstractmethod
+    def schedule_module_ranks(self):
+        """Schedule ranks for each module to compute KFs"""
+
+    ### KFs computations and communications
+    @abstractmethod
+    def _compute_factors(self):
+        """Compute KFs."""
+
+    @abstractmethod
+    def _communicate_factors(self):
+        """Communicate KFs."""
+
+    @abstractmethod
+    def _compute_inverse(self):
+        """Compute inverse KFs."""
+
+    @abstractmethod
+    def _communicate_inverse(self):
+        """Communicate inverse KFs."""
+
+    @abstractmethod
+    def _compute_pred(self):
+        """Compute preconditioned gradients."""
+
+    @abstractmethod
+    def _communicate_pred(self):
+        """Communicate preconditioned gradients."""
+
+    @abstractmethod
+    def _update_grad_in_place(self):
+        """Update preconditioned gradients in place."""
+    
+    ### Perform one K-FAC step
+    def step(self, closure=None, epoch=None):
+        """Perform one K-FAC step"""
+
+        # update params, used for compatibilty with `KFACParamScheduler`
+        group = self.param_groups[0]
+        self.lr = group['lr']
+        self.damping = group['damping']
+        self.fac_update_freq = group['fac_update_freq']
+        self.kfac_update_freq = group['kfac_update_freq']
+
+        # (1) scheduling
+        self.schedule_module_ranks()
+
+        # (2) compute and communicate KFs
+        if self.steps % self.fac_update_freq == 0:
+            if not self.exclude_compute_factor:
+                self._compute_factors()
+            if not self.exclude_communicate_factor:
+                if hvd.size() > 1:
+                    self._communicate_factors()
+
+        # (3) compute and/or communicate inverse KFs
+        if self.steps % self.kfac_update_freq == 0:
+            if not self.exclude_compute_inverse:
+                self._compute_inverse()
+            if not self.exclude_communicate_inverse and self.communicate_inverse_or_not:
+                if hvd.size() > 1:
+                   self._communicate_inverse()
+                    
+        # (4) compute and/or communicate preconditioned gradients
+        if not self.exclude_compute_inverse:
+            self._compute_pred()
+
+        if not self.exclude_communuicate_inverse and not self.communicate_inverse_or_not:
+            if hvd.size() > 1:
+                self._communicate_pred()
+        
+        # (5) update preconditioned gradients in place
+        self._update_grad_in_place()
+        self.steps += 1
+
+
