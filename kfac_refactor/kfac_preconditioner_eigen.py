@@ -12,7 +12,7 @@ from kfac.utils import cycle
 from kfac.utils import get_block_boundary
 from kfac.utils import sparsification
 
-from kfac_refactor.kfac_preconditioner_base import KFAC as KFAC_BASE
+from kfac_refactor.kfac_preconditioner_inv import KFAC as KFAC_INV
 
 import logging
 import tcmm
@@ -21,10 +21,10 @@ import torchsso
 logger = logging.getLogger()
 
 
-class KFAC(KFAC_BASE):
+class KFAC(KFAC_INV):
     """
-    Model-Parallelism Distributed K-FAC Preconditioner with explicit factor inversion 
-    Refer to: Large-scale distributed second-order optimization using kronecker-factored approximate curvature for deep convolutional neural networks (CVPR 2019)
+    Model-Parallelism Distributed K-FAC Preconditioner with implicit eigen-decomposition
+    Refer to: Convolutional Neural Network Training with Distributed K-FAC (SC 2020)
     
     Args:
       model (nn): Torch model
@@ -45,7 +45,7 @@ class KFAC(KFAC_BASE):
                  damping=0.001,
                  fac_update_freq=1,
                  kfac_update_freq=1,
-                 communicate_inverse_or_not=True,
+                 distribute_layer_factors=None, # layer-wise or factor-wise
                  kl_clip=0.001,
                  factor_decay=0.95,
                  exclude_vocabulary_size=None,
@@ -55,15 +55,27 @@ class KFAC(KFAC_BASE):
         super(KFAC, self).__init__(model=model, lr=lr, damping=damping, 
                                     fac_update_freq=fac_update_freq, 
                                     kfac_update_freq=kfac_update_freq,
-                                    communicate_inverse_or_not=communicate_inverse_or_not,
+                                    communicate_inverse_or_not=True, # force to comm_inverse
                                     kl_clip=kl_clip, 
                                     factor_decay=factor_decay,
                                     exclude_vocabulary_size=exclude_vocabulary_size,
                                     hook_enabled=hook_enabled,
                                     exclude_parts=exclude_parts)
 
-        self.computeA = ComputeA()
-        self.computeG = ComputeG()
+        #self.computeA = ComputeA()
+        #self.computeG = ComputeG()
+
+        # Dictionaries keyed by `module` to store the eigen-vectors and eigen-values
+        self.m_QA, self.m_QG = {}, {}
+        self.m_dA, self.m_dG = {}, {}
+
+        # Determine whether distribute layer factors
+        if distribute_layer_factors is None:
+            self.distribute_layer_factors = True \
+                    if hvd.size() > len(self.modules) else False
+        else:
+            self.distribute_layer_factors = distribute_layer_factors
+
 
     ### Schedule KFs
     def schedule_module_ranks(self):
@@ -75,7 +87,11 @@ class KFAC(KFAC_BASE):
         rank_iter = 0
         for module in self.modules:
             rank_a = rank_iter % hvd.size()
-            rank_g = rank_a
+            if self.distribute_layer_factors:
+                rank_iter += 1
+                rank_g = rank_iter % hvd.size()
+            else:
+                rank_g = rank_a
             module_ranks[module] = (rank_a, rank_g)
             rank_iter += 1
 
@@ -83,38 +99,8 @@ class KFAC(KFAC_BASE):
         if hvd.rank() == 0:
             logger.info('module_ranks: %s', module_ranks.values())
     
-    ### Compute KFs
-    def _compute_factors(self):
-        """Compute As and Gs, and store results to m_A and m_G"""
-        for module in self.modules:
-            A = self.computeA(self.m_a[module], module)
-            if self.steps == 0: # initialize A=I, inv_A=0
-                self.m_A[module] = torch.diag(A.new_ones(A.shape[0]))
-                self.m_inv_A[module] = A.new_zeros(A.shape)
-            update_running_avg(A, self.m_A[module], self.factor_decay)
 
-            G = self.computeG(self.m_g[module], module, batch_averaged=True)
-            if self.steps == 0: # initialize G=I, inv_G=0
-                self.m_G[module] = torch.diag(G.new_ones(G.shape[0]))
-                self.m_inv_G[module] = G.new_zeros(G.shape)
-            update_running_avg(G, self.m_G[module], self.factor_decay)
-    
-    ### Communicate KFs
-    def _communicate_factors(self):
-        """All-reduce the factors"""
-        handles = []
-        
-        for m in self.modules:
-            handles.append(hvd.allreduce_async_(self.m_A[m].data, op=hvd.Average))
-            handles.append(hvd.allreduce_async_(self.m_G[m].data, op=hvd.Average))
-        
-        for handle in handles:
-            hvd.synchronize(handle)
-
-    ### Compute Inverse KFs
-    def _add_value_to_diagonal(self, X, value):
-        return X.add_(torch.diag(X.new(X.shape[0]).fill_(value)))
-
+    ### Eigen-decompose Inverse KFs
     def _compute_inverse(self):
         """Compute inverse factors distributively"""
         for module in self.modules:
