@@ -88,15 +88,13 @@ class KFAC(KFAC_BASE):
         """Compute As and Gs, and store results to m_A and m_G"""
         for module in self.modules:
             A = self.computeA(self.m_a[module], module)
-            if self.steps == 0: # initialize A=I, inv_A=0
+            if self.steps == 0: # initialize memory as A=I
                 self.m_A[module] = torch.diag(A.new_ones(A.shape[0]))
-                self.m_inv_A[module] = A.new_zeros(A.shape)
             update_running_avg(A, self.m_A[module], self.factor_decay)
 
             G = self.computeG(self.m_g[module], module, batch_averaged=True)
-            if self.steps == 0: # initialize G=I, inv_G=0
+            if self.steps == 0: # initialize memory as G=I
                 self.m_G[module] = torch.diag(G.new_ones(G.shape[0]))
-                self.m_inv_G[module] = G.new_zeros(G.shape)
             update_running_avg(G, self.m_G[module], self.factor_decay)
     
     ### Communicate KFs
@@ -118,6 +116,12 @@ class KFAC(KFAC_BASE):
     def _compute_inverse(self):
         """Compute inverse factors distributively"""
         for module in self.modules:
+            if self.steps == 0: # initialize memory as inv_A=0, inv_G=0
+                A = self.m_A[module]
+                self.m_inv_A[module] = A.new_zeros(A.shape)
+                G = self.m_G[module]
+                self.m_inv_G[module] = G.new_zeros(G.shape)
+            
             rank_a, rank_g = self.module_ranks[module]
             if hvd.rank() == rank_a:
                 A = self._add_value_to_diagonal(self.m_A[module], self.damping)
