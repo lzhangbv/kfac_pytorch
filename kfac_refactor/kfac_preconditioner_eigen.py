@@ -79,7 +79,7 @@ class KFAC(KFAC_INV):
 
     ### Schedule KFs
     def schedule_module_ranks(self):
-        """Schedule ranks for each module with Round-Robin"""
+        """Schedule ranks for each rank/module with Round-Robin"""
         if self.module_ranks is not None:
             return self.module_ranks
 
@@ -100,102 +100,50 @@ class KFAC(KFAC_INV):
             logger.info('module_ranks: %s', module_ranks.values())
     
 
-    ### Eigen-decompose Inverse KFs
+    ### Eigen-decompose KFs
     def _compute_inverse(self):
-        """Compute inverse factors distributively"""
+        """Eigen-decompose factors distributively"""
         for module in self.modules:
+            if self.steps == 0: # initialize memory as dA=0, dG=0, QA=0, QG=0
+                A = self.m_A[module]
+                self.m_dA[module] = A.new_zeros(A.shape[0])
+                self.m_QA[module] = A.new_zeros(A.shape)
+                G = self.m_G[module]
+                self.m_dG[module] = G.new_zeros(G.shape[0])
+                self.m_QG[module] = G.new_zeros(G.shape)
+
             rank_a, rank_g = self.module_ranks[module]
             if hvd.rank() == rank_a:
-                A = self._add_value_to_diagonal(self.m_A[module], self.damping)
-                self.m_inv_A[module] = torchsso.utils.inv(A)
+                dA, QA = tcmm.f_symeig(self.m_A[module])
+                self.m_QA[module] = QA.transpose(-2, -1)
+                self.m_dA[module] = torch.mul(dA, (dA > self.eps).float())
 
             if hvd.rank() == rank_g:
-                G = self._add_value_to_diagonal(self.m_G[module], self.damping)
-                self.m_inv_G[module] = torchsso.utils.inv(G)
+                dG, QG = tcmm.f_symeig(self.m_G[module])
+                self.m_QG[module] = QG.transpose(-2, -1)
+                self.m_dG[module] = torch.mul(dG, (dG > self.eps).float())
 
     ### Communicate Inverse KFs
     def _communicate_inverse(self):
-        """Broadcast the inverse factors to other workers"""
+        """Broadcast the eigen-vectors and eigen-values to other workers"""
         handles = []
 
         for m in self.modules: 
             rank_a, rank_g = self.module_ranks[m]
-            handles.append(hvd.broadcast_async_(self.m_inv_A[m], rank_a))
-            handles.append(hvd.broadcast_async_(self.m_inv_G[m], rank_g))
+            handles.append(hvd.broadcast_async_(self.m_QA[m].data, rank_a))
+            handles.append(hvd.broadcast_async_(self.m_dA[m].data, rank_a))
+            handles.append(hvd.broadcast_async_(self.m_QG[m].data, rank_g))
+            handles.append(hvd.broadcast_async_(self.m_dG[m].data, rank_g))
 
         for handle in handles:
             hvd.synchronize(handle)
 
     ### Compute Preconditioned Gradients
-    def _get_grad(self, module):
-        """Get gradient with shape [output_dim, input_dim] for module"""
-        if module.__class__.__name__ == 'Conv2d':
-            # n_filters * (in_c * kw * kh)
-            grad = module.weight.grad.data.view(module.weight.grad.data.size(0), -1)
-        else:
-            grad = module.weight.grad.data
-        if module.bias is not None:
-            grad = torch.cat([grad, module.bias.grad.data.view(-1, 1)], 1)
-        return grad
-    
     def _compute_pred(self):
         """Compute the preconditioned gradients"""
         for module in self.modules: 
             grad = self._get_grad(module)
-            precon_grad = self.m_inv_G[module] @ grad @ self.m_inv_A[module]
+            v1 = self.m_QG[module].t() @ grad @ self.m_QA[module]
+            v2 = v1 / (self.m_dG[module].unsqueeze(1) * self.m_dA[module].unsqueeze(0) + self.damping)
+            precon_grad = self.m_QG[module] @ v2 @ self.m_QA[module].t()
             self.m_precon_grad[module] = precon_grad
-
-    ### Communicate Preconditioned Gradients
-    def _communicate_pred(self):
-        """Broadcast the preconditioned gradients to other workers"""
-        handles = []
-
-        for m in self.modules:
-            rank_a, rank_g = self.module_ranks[m] 
-            assert rank_a == rank_g
-            v = self.m_precon_grad[m]
-            handles.append(hvd.broadcast_async_(v, rank_a))
-
-        for handle in handles:
-            hvd.synchronize(handle)
-
-    ### Update preconditioned gradients in place
-    def _reshape_preconditioned_grad(self, module, v):
-        """Return preconditioned gradient with same shape as grad"""
-        if module.bias is not None:
-            v = [v[:, :-1], v[:, -1:]]
-            v[0] = v[0].view(module.weight.grad.data.size()) # weight
-            v[1] = v[1].view(module.bias.grad.data.size())   # bias
-        else:
-            v = [v.view(module.weight.grad.data.size())]
-        return v
-
-    def _update_grad_in_place(self):
-        """Update the preconditioned gradients in place"""
-        vg_sum = 0
-        for module in self.modules:
-            # reshape the preconditioned gradients
-            precon_grad = self.m_precon_grad[module]
-            v = self._reshape_preconditioned_grad(module, precon_grad)
-            
-            # accumulate vg_sum
-            vg_sum += (v[0] * module.weight.grad.data * self.lr ** 2).sum().item()
-            if module.bias is not None:
-                vg_sum += (v[1] * module.bias.grad.data * self.lr ** 2).sum().item()
-            
-            # copy the preconditioned gradients
-            module.weight.grad.data.copy_(v[0])
-            if module.bias is not None:
-                module.bias.grad.data.copy_(v[1])
-        
-        # kl_clip
-        if self.exclude_communicate_inverse:
-            nu = 1
-        else:
-            nu = min(1.0, math.sqrt(self.kl_clip / abs(vg_sum)))
-        
-        for module in self.modules:
-            module.weight.grad.data.mul_(nu)
-            if module.bias is not None:
-                module.bias.grad.data.mul_(nu)
-
