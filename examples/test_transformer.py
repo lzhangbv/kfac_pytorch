@@ -43,7 +43,8 @@ from transformer.Models import Transformer
 from transformer.Optim import LrScheduler
 from transformer.Translator import Translator
 
-import kfac
+#import kfac
+import kfac_refactor as kfac
 os.environ['HOROVOD_NUM_NCCL_STREAMS'] = '1' 
 
 
@@ -263,9 +264,9 @@ def get_model(args):
                 damping=args.damping, kl_clip=args.kl_clip,
                 fac_update_freq=args.kfac_cov_update_freq,
                 kfac_update_freq=args.kfac_update_freq,
-                diag_blocks=args.diag_blocks,
-                diag_warmup=args.diag_warmup,
-                distribute_layer_factors=args.distribute_layer_factors, 
+                #diag_blocks=args.diag_blocks,
+                #diag_warmup=args.diag_warmup,
+                #distribute_layer_factors=args.distribute_layer_factors, 
                 exclude_parts=args.exclude_parts,
                 exclude_vocabulary_size=args.trg_vocab_size)
         

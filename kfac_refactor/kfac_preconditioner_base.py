@@ -70,6 +70,8 @@ class KFAC(optim.Optimizer):
 
         super(KFAC, self).__init__(model.parameters(), defaults)
 
+        self.fac_update_freq = fac_update_freq
+        self.kfac_update_freq = kfac_update_freq
         self.communicate_inverse_or_not = communicate_inverse_or_not
         self.kl_clip = kl_clip
         self.factor_decay = factor_decay
@@ -84,14 +86,17 @@ class KFAC(optim.Optimizer):
         # register hooks
         self.modules = []
         self.module_names = []
-        self._register_modules(model)
+        self._register_module_hooks(model)
 
         # dictionaries keyed by `module` to storing KFs, inverse KFs, etc
         self.m_a, self.m_g = {}, {}
         self.m_A, self.m_G = {}, {}
         self.m_inv_A, self.m_inv_G = {}, {}
         self.m_precon_grad = {}
+        
+        # module rank scheduling
         self.module_ranks = None
+        self.schedule_module_ranks()
 
         self.eps = 1e-10  # for numerical stability
         self.steps = 0
@@ -110,7 +115,7 @@ class KFAC(optim.Optimizer):
         if self.hook_enabled and self.steps % self.fac_update_freq == 0:
             self.m_g[module] = grad_output[0].data
 
-    def _register_hooks(self, model):
+    def _register_module_hooks(self, model):
         """Register forard/backward hooks to supported modules"""
         supported_modules = {'Linear', 'Conv2d'}
         name_idx = 0
@@ -139,38 +144,38 @@ class KFAC(optim.Optimizer):
             dim_A += 1
         return dim_A, dim_G
 
-    @abstractmethod
     def schedule_module_ranks(self):
         """Schedule ranks for each module to compute KFs"""
+        raise NotImplementedError
 
     ### KFs computations and communications
-    @abstractmethod
     def _compute_factors(self):
         """Compute KFs."""
+        raise NotImplementedError
 
-    @abstractmethod
     def _communicate_factors(self):
         """Communicate KFs."""
+        raise NotImplementedError
 
-    @abstractmethod
     def _compute_inverse(self):
         """Compute inverse KFs."""
+        raise NotImplementedError
 
-    @abstractmethod
     def _communicate_inverse(self):
         """Communicate inverse KFs."""
+        raise NotImplementedError
 
-    @abstractmethod
     def _compute_pred(self):
         """Compute preconditioned gradients."""
+        raise NotImplementedError
 
-    @abstractmethod
     def _communicate_pred(self):
         """Communicate preconditioned gradients."""
+        raise NotImplementedError
 
-    @abstractmethod
     def _update_grad_in_place(self):
         """Update preconditioned gradients in place."""
+        raise NotImplementedError
     
     ### Perform one K-FAC step
     def step(self, closure=None, epoch=None):
@@ -183,10 +188,8 @@ class KFAC(optim.Optimizer):
         self.fac_update_freq = group['fac_update_freq']
         self.kfac_update_freq = group['kfac_update_freq']
 
-        # (1) scheduling
-        self.schedule_module_ranks()
 
-        # (2) compute and communicate KFs
+        # (1) compute and communicate KFs
         if self.steps % self.fac_update_freq == 0:
             if not self.exclude_compute_factor:
                 self._compute_factors()
@@ -194,7 +197,7 @@ class KFAC(optim.Optimizer):
                 if hvd.size() > 1:
                     self._communicate_factors()
 
-        # (3) compute and/or communicate inverse KFs
+        # (2) compute and/or communicate inverse KFs
         if self.steps % self.kfac_update_freq == 0:
             if not self.exclude_compute_inverse:
                 self._compute_inverse()
@@ -202,16 +205,86 @@ class KFAC(optim.Optimizer):
                 if hvd.size() > 1:
                    self._communicate_inverse()
                     
-        # (4) compute and/or communicate preconditioned gradients
+        # (3) compute and/or communicate preconditioned gradients
         if not self.exclude_compute_inverse:
             self._compute_pred()
 
-        if not self.exclude_communuicate_inverse and not self.communicate_inverse_or_not:
+        if not self.exclude_communicate_inverse and not self.communicate_inverse_or_not:
             if hvd.size() > 1:
                 self._communicate_pred()
         
-        # (5) update preconditioned gradients in place
+        # (4) update preconditioned gradients in place
         self._update_grad_in_place()
         self.steps += 1
 
+
+class KFACParamScheduler():
+    """Updates KFAC hyper-parameters at each epoch
+
+    Args:
+      kfac (KFAC): wrapped KFAC preconditioner
+      damping_alpha (float): multiplicative factor of the damping (default: 1)
+      damping_schedule (list): list of epochs to multiply the damping by `damping_alpha` (default: None)
+      update_freq_alpha (float): multiplicative factor of the KFAC update freq (default: 1)
+      update_freq_schedule (list): list of epochs to multiply the KFAC update freq by `update_freq_alpha` (default: None)
+      start_epoch (int): starting epoch, for use if resuming training from checkpoint (default: 0)
+    """
+    def __init__(self,
+                 kfac,
+                 damping_alpha=1,
+                 damping_schedule=None,
+                 update_freq_alpha=1,
+                 update_freq_schedule=None,
+                 start_epoch=0):
+
+        self.kfac = kfac
+        params = self.kfac.param_groups[0]
+
+        self.damping_base = params['damping']
+        self.damping_alpha = damping_alpha
+        self.damping_schedule = damping_schedule
+        self.damping_factor_func = \
+                self._get_factor_func(self.damping_schedule,
+                                     self.damping_alpha)
+
+        self.fac_update_freq_base = params['fac_update_freq']
+        self.kfac_update_freq_base = params['kfac_update_freq']
+        self.update_freq_alpha = update_freq_alpha
+        self.update_freq_schedule = update_freq_schedule
+        self.update_freq_factor_func = \
+                self._get_factor_func(self.update_freq_schedule,
+                                     self.update_freq_alpha)
+
+        self.epoch = start_epoch
+
+    def _get_factor_func(self, schedule, alpha):
+        """Returns a function to compute an update factor using the epoch"""
+        if schedule is not None:
+            schedule.sort(reverse=True)
+        else:
+            schedule = []
+
+        def factor_func(epoch):
+            factor = 1.
+            for e in schedule:
+                if epoch >= e:
+                    factor *= alpha
+            return factor
+
+        return factor_func
+
+    def step(self, epoch=None):
+        """Update KFAC parameters"""
+        if epoch is not None:
+            self.epoch = epoch
+        else:
+            self.epoch += 1
+
+        params = self.kfac.param_groups[0]
+
+        params['damping'] = self.damping_base * self.damping_factor_func(self.epoch)
+
+        factor = self.update_freq_factor_func(self.epoch)
+        params['fac_update_freq'] = int(self.fac_update_freq_base * factor)
+        params['kfac_update_freq'] = int(self.kfac_update_freq_base * factor)
 
