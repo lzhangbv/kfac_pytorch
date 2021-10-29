@@ -45,7 +45,7 @@ class KFAC(KFAC_INV):
                  damping=0.001,
                  fac_update_freq=1,
                  kfac_update_freq=1,
-                 distribute_layer_factors=None, # layer-wise or factor-wise
+                 distribute_layer_factors=True, #None, # layer-wise or factor-wise
                  kl_clip=0.001,
                  factor_decay=0.95,
                  exclude_vocabulary_size=None,
@@ -68,8 +68,8 @@ class KFAC(KFAC_INV):
         # Dictionaries keyed by `module` to store the eigen-vectors and eigen-values
         self.m_QA, self.m_QG = {}, {}
         self.m_dA, self.m_dG = {}, {}
-
-        # Determine whether distribute layer factors
+        
+        # Determine whether distribute layer factors (used for rank scheduling)
         if distribute_layer_factors is None:
             self.distribute_layer_factors = True \
                     if hvd.size() > len(self.modules) else False
@@ -115,12 +115,12 @@ class KFAC(KFAC_INV):
             rank_a, rank_g = self.module_ranks[module]
             if hvd.rank() == rank_a:
                 dA, QA = tcmm.f_symeig(self.m_A[module])
-                self.m_QA[module] = QA.transpose(-2, -1)
+                self.m_QA[module] = QA.transpose(-2, -1).contiguous()
                 self.m_dA[module] = torch.mul(dA, (dA > self.eps).float())
 
             if hvd.rank() == rank_g:
                 dG, QG = tcmm.f_symeig(self.m_G[module])
-                self.m_QG[module] = QG.transpose(-2, -1)
+                self.m_QG[module] = QG.transpose(-2, -1).contiguous()
                 self.m_dG[module] = torch.mul(dG, (dG > self.eps).float())
 
     ### Communicate Inverse KFs
@@ -130,10 +130,10 @@ class KFAC(KFAC_INV):
 
         for m in self.modules: 
             rank_a, rank_g = self.module_ranks[m]
-            handles.append(hvd.broadcast_async_(self.m_QA[m].data, rank_a))
-            handles.append(hvd.broadcast_async_(self.m_dA[m].data, rank_a))
-            handles.append(hvd.broadcast_async_(self.m_QG[m].data, rank_g))
-            handles.append(hvd.broadcast_async_(self.m_dG[m].data, rank_g))
+            handles.append(hvd.broadcast_async_(self.m_QA[m], rank_a))
+            handles.append(hvd.broadcast_async_(self.m_dA[m], rank_a))
+            handles.append(hvd.broadcast_async_(self.m_QG[m], rank_g))
+            handles.append(hvd.broadcast_async_(self.m_dG[m], rank_g))
 
         for handle in handles:
             hvd.synchronize(handle)

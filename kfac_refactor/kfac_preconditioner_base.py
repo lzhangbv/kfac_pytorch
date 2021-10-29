@@ -94,9 +94,8 @@ class KFAC(optim.Optimizer):
         self.m_inv_A, self.m_inv_G = {}, {}
         self.m_precon_grad = {}
         
-        # module rank scheduling
+        # scheduling results
         self.module_ranks = None
-        self.schedule_module_ranks()
 
         self.eps = 1e-10  # for numerical stability
         self.steps = 0
@@ -188,6 +187,9 @@ class KFAC(optim.Optimizer):
         self.fac_update_freq = group['fac_update_freq']
         self.kfac_update_freq = group['kfac_update_freq']
 
+        # (0) schedule module ranks
+        if self.module_ranks is None:
+            self.schedule_module_ranks()
 
         # (1) compute and communicate KFs
         if self.steps % self.fac_update_freq == 0:
