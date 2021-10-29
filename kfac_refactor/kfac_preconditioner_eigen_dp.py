@@ -45,7 +45,7 @@ class KFAC(KFAC_INV_DP):
                  damping=0.001,
                  fac_update_freq=1,
                  kfac_update_freq=1,
-                 # communicate_inverse_or_not=False,
+                 # communicate_inverse_or_not=False, # force to comm_pred
                  kl_clip=0.001,
                  factor_decay=0.95,
                  exclude_vocabulary_size=None,
@@ -55,7 +55,6 @@ class KFAC(KFAC_INV_DP):
         super(KFAC, self).__init__(model=model, lr=lr, damping=damping, 
                                     fac_update_freq=fac_update_freq, 
                                     kfac_update_freq=kfac_update_freq,
-                                    communicate_inverse_or_not=False, # force to comm_pred
                                     kl_clip=kl_clip, 
                                     factor_decay=factor_decay,
                                     exclude_vocabulary_size=exclude_vocabulary_size,
@@ -74,12 +73,12 @@ class KFAC(KFAC_INV_DP):
             rank_a, rank_g = self.module_ranks[module]
             if hvd.rank() == rank_a:
                 dA, QA = tcmm.f_symeig(self.m_A[module])
-                self.m_QA[module] = QA.transpose(-2, -1)
+                self.m_QA[module] = QA.transpose(-2, -1).contiguous()
                 self.m_dA[module] = torch.mul(dA, (dA > self.eps).float())
 
             if hvd.rank() == rank_g:
                 dG, QG = tcmm.f_symeig(self.m_G[module])
-                self.m_QG[module] = QG.transpose(-2, -1)
+                self.m_QG[module] = QG.transpose(-2, -1).contiguous()
                 self.m_dG[module] = torch.mul(dG, (dG > self.eps).float())
 
     ### Compute Preconditioned Gradients distributively
