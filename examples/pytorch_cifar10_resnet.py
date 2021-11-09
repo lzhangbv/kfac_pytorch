@@ -26,7 +26,8 @@ import torch.multiprocessing as mp
 
 import cifar_resnet as resnet
 from utils import *
-import kfac
+#import kfac
+import kfac_refactor as kfac
 import horovod.torch as hvd
 
 def initialize():
@@ -112,6 +113,7 @@ def initialize():
 
     args.verbose = True if hvd.rank() == 0 else False
     if args.verbose:
+        logger.info("torch version: %s", torch.__version__)
         logger.info(args)
     
     return args
@@ -225,7 +227,7 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, criterion, trai
     train_loss = Metric('train_loss')
     train_accuracy = Metric('train_accuracy')
     avg_time = 0.0
-    display = 1
+    display = 10
     iotimes=[];fwbwtimes=[];kfactimes=[];commtimes=[];uptimes=[]
 
     for batch_idx, (data, target) in enumerate(train_loader):
@@ -284,6 +286,9 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, criterion, trai
             iotimes=[];fwbwtimes=[];kfactimes=[];commtimes=[];uptimes=[]
             avg_time = 0.0
 
+        if batch_idx >= 60:
+            break
+
     if args.verbose:
         logger.info("[%d] epoch train loss: %.4f, acc: %.3f" % (epoch, train_loss.avg.item(), 100*train_accuracy.avg.item()))
 
@@ -324,7 +329,7 @@ if __name__ == '__main__':
         train(epoch, model, optimizer, preconditioner, lr_scheduler, criterion, train_sampler, train_loader, args)
         #if args.verbose:
         #    logger.info("[%d] epoch train time: %.3f"%(epoch, time.time() - stime))
-        #test(epoch, model, criterion, test_loader, args)
+        test(epoch, model, criterion, test_loader, args)
 
     if args.verbose:
         logger.info("Total Training Time: %s", str(datetime.timedelta(seconds=time.time() - start)))

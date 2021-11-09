@@ -3,21 +3,13 @@ import torch
 import torch.optim as optim
 import horovod.torch as hvd
 import numpy as np
-from horovod.torch.mpi_ops import allgather_async
 
-from kfac.utils import (ComputeA, ComputeG)
-from kfac.utils import update_running_avg
-from kfac.utils import try_contiguous
-from kfac.utils import cycle
-from kfac.utils import get_block_boundary
-from kfac.utils import sparsification
-
+from kfac_refactor.utils import (ComputeA, ComputeG)
+from kfac_refactor.utils import update_running_avg
+from kfac_refactor.utils import mat_inv
 from kfac_refactor.kfac_preconditioner_inv import KFAC as KFAC_INV
 
 import logging
-import tcmm
-import torchsso
-
 logger = logging.getLogger()
 
 
@@ -113,14 +105,14 @@ class KFAC(KFAC_INV):
                 #     A = self.m_A[module]
                 #     self.m_inv_A[module] = A.new_zeros(A.shape)
                 A = self._add_value_to_diagonal(self.m_A[module], self.damping)
-                self.m_inv_A[module] = torchsso.utils.inv(A)
+                self.m_inv_A[module] = mat_inv(A)
 
             if hvd.rank() == rank_g:
                 # if self.steps == 0: # initialize memory as inv_G=0
                 #     G = self.m_G[module]
                 #     self.m_inv_G[module] = G.new_zeros(G.shape)             
                 G = self._add_value_to_diagonal(self.m_G[module], self.damping)
-                self.m_inv_G[module] = torchsso.utils.inv(G)
+                self.m_inv_G[module] = mat_inv(G)
 
     ### Compute Preconditioned Gradients distributively
     def _compute_pred(self):

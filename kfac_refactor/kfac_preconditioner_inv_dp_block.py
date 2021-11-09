@@ -3,21 +3,14 @@ import torch
 import torch.optim as optim
 import horovod.torch as hvd
 import numpy as np
-from horovod.torch.mpi_ops import allgather_async
 
-from kfac.utils import (ComputeA, ComputeG)
-from kfac.utils import update_running_avg
-from kfac.utils import try_contiguous
-from kfac.utils import cycle
-from kfac.utils import get_block_boundary
-from kfac.utils import sparsification
-
+from kfac_refactor.utils import (ComputeA, ComputeG)
+from kfac_refactor.utils import update_running_avg
+from kfac_refactor.utils import get_block_boundary
+from kfac_refactor.utils import mat_inv
 from kfac_refactor.kfac_preconditioner_inv import KFAC as KFAC_INV
 
 import logging
-import tcmm
-import torchsso
-
 logger = logging.getLogger()
 
 
@@ -114,12 +107,22 @@ class KFAC(KFAC_INV):
     ### Compute Inverse KFs distributively
     def _invert_diag_blocks(self, KF, inv_KF):
         """invert diag block approximated matrix"""
+        dim = KF.shape[0]
+        n = min(self.diag_blocks, dim)
+        step_dim = dim // n
+        for start_dim in range(0, dim, step_dim):
+            block = KF[start_dim:start_dim+step_dim, start_dim:start_dim+step_dim]
+            inverse = mat_inv(block)
+            inv_KF.data[start_dim:start_dim+step_dim, start_dim:start_dim+step_dim].copy_(inverse)
+        
+        """implementation with get_block_boundary
         n = min(self.diag_blocks, KF.shape[0])
         for i in range(n):
             start, end = get_block_boundary(i, n, KF.shape)
             block = KF[start[0]:end[0], start[1]:end[1]]
             inverse = torchsso.utils.inv(block)
             inv_KF.data[start[0]:end[0], start[1]:end[1]].copy_(inverse)
+        """
 
     def _compute_inverse(self):
         """Compute inverse factors distributively"""

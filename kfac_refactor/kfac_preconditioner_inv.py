@@ -3,21 +3,13 @@ import torch
 import torch.optim as optim
 import horovod.torch as hvd
 import numpy as np
-from horovod.torch.mpi_ops import allgather_async
 
-from kfac.utils import (ComputeA, ComputeG)
-from kfac.utils import update_running_avg
-from kfac.utils import try_contiguous
-from kfac.utils import cycle
-from kfac.utils import get_block_boundary
-from kfac.utils import sparsification
-
+from kfac_refactor.utils import (ComputeA, ComputeG)
+from kfac_refactor.utils import update_running_avg
+from kfac_refactor.utils import mat_inv
 from kfac_refactor.kfac_preconditioner_base import KFAC as KFAC_BASE
 
 import logging
-import tcmm
-import torchsso
-
 logger = logging.getLogger()
 
 
@@ -125,11 +117,11 @@ class KFAC(KFAC_BASE):
             rank_a, rank_g = self.module_ranks[module]
             if hvd.rank() == rank_a:
                 A = self._add_value_to_diagonal(self.m_A[module], self.damping)
-                self.m_inv_A[module] = torchsso.utils.inv(A)
+                self.m_inv_A[module] = mat_inv(A)
 
             if hvd.rank() == rank_g:
                 G = self._add_value_to_diagonal(self.m_G[module], self.damping)
-                self.m_inv_G[module] = torchsso.utils.inv(G)
+                self.m_inv_G[module] = mat_inv(G)
 
     ### Communicate Inverse KFs
     def _communicate_inverse(self):

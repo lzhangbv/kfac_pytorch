@@ -3,15 +3,9 @@ import torch
 import torch.optim as optim
 import horovod.torch as hvd
 import numpy as np
-from horovod.torch.mpi_ops import allgather_async
 
-from kfac.utils import (ComputeA, ComputeG)
-from kfac.utils import update_running_avg
-from kfac.utils import try_contiguous
-from kfac.utils import cycle
-from kfac.utils import get_block_boundary
-from kfac.utils import sparsification
-
+from kfac_refactor.utils import (ComputeA, ComputeG)
+from kfac_refactor.utils import update_running_avg
 from kfac_refactor.kfac_preconditioner_inv import KFAC as KFAC_INV
 
 import logging

@@ -20,7 +20,7 @@ stat_decay="${stat_decay:-0.95}"
 damping="${damping:-0.003}"
 
 MPIPATH=/home/esetstore/.local/openmpi-4.0.1
-PY=/home/esetstore/pytorch1.4/bin/python
+PY=/home/esetstore/pytorch1.8/bin/python
 
 if [ "$rdma" = "0" ]; then
 params="-mca pml ob1 -mca btl ^openib \
