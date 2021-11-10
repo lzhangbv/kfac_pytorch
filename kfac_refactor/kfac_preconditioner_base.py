@@ -117,12 +117,12 @@ class KFAC(optim.Optimizer):
                 self.modules.append(module)
                 module.register_forward_pre_hook(self._forward_hook_event)
                 module.register_backward_hook(self._backward_hook_event)  # used in pytorch1.4
-                # module.register_full_backward_hook(self._backward_hook_event)   # to be fixed: lack of some module in m_g
+                #module.register_full_backward_hook(self._backward_hook_event)   # to be fixed: the hook seems not fired at some module when its grad_input is None, e.g. the first conv2d
                 module_name = 'module_name_%s_%d' % (classname, name_idx)
                 self.module_names.append(module_name)
                 name_idx += 1
-        if hvd.rank() == 0:
-            logger.info("#register modules: %s", len(self.modules))
+        #if hvd.rank() == 0:
+        #    logger.info("#register modules: %s", len(self.modules))
 
     ### Schedule KFs
     def _get_module_KF_shape(self, module):
@@ -185,11 +185,6 @@ class KFAC(optim.Optimizer):
         if self.module_ranks is None:
             self.schedule_module_ranks()
 
-        # debug
-        if hvd.rank() == 0:
-            logger.info("#m_a: %s", len(self.m_a))
-            logger.info("#m_g: %s", len(self.m_g))
-        
         # (1) compute and communicate KFs
         if self.steps % self.fac_update_freq == 0:
             if not self.exclude_compute_factor:
@@ -198,11 +193,6 @@ class KFAC(optim.Optimizer):
                 if hvd.size() > 1:
                     self._communicate_factors()
         
-        # debug
-        if hvd.rank() == 0:
-            logger.info("#m_A: %s", len(self.m_A))
-            logger.info("#m_G: %s", len(self.m_G))
-
         # (2) compute and/or communicate inverse KFs
         if self.steps % self.kfac_update_freq == 0:
             if not self.exclude_compute_inverse:
