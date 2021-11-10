@@ -15,7 +15,7 @@ def mat_inv(x, method="default"):
     elif method == "cholesky":
         u = torch.linalg.cholesky(x)
         return torch.cholesky_inverse(u).contiguous()
-    elif method == "torchsso": # to be fixed: raise errors in pytorch1.8
+    elif method == "torchsso": # to be fixed, CUDA error: invalid configuration argument (in pytorch1.8)
         return torchsso.utils.inv(x)
     else:
         raise NotImplementedError
