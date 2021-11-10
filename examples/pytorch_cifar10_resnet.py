@@ -28,7 +28,10 @@ import cifar_resnet as resnet
 from utils import *
 #import kfac
 import kfac_refactor as kfac
-import horovod.torch as hvd
+
+from backend import *
+#import horovod.torch as hvd
+#import torch.distributed as dist
 
 def initialize():
     # Training Parameters
@@ -84,6 +87,10 @@ def initialize():
                         help='random seed (default: 42)')
     parser.add_argument('--fp16-allreduce', action='store_true', default=False,
                         help='use fp16 compression during allreduce')
+    
+    # Set automatically by torch distributed launch
+    parser.add_argument('--local_rank', type=int, default=0,
+                        help='local rank for distributed training')
 
     args = parser.parse_args()
 
@@ -91,12 +98,15 @@ def initialize():
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     args.use_kfac = True if args.kfac_update_freq > 0 else False
     
-
-    hvd.init()
+    # Comm backend init
+    #comm_backend = HorovodBackend()
+    comm_backend = TorchBackend(args.local_rank)
+    logger.info("GPU %s out of %s GPUs", comm_backend.rank(), comm_backend.size())
 
     torch.manual_seed(args.seed)
     if args.cuda:
-        torch.cuda.set_device(hvd.local_rank())
+        #torch.cuda.set_device(hvd.local_rank())
+        torch.cuda.set_device(comm_backend.local_rank())
         torch.cuda.manual_seed(args.seed)
 
     torch.backends.cudnn.benchmark = True
@@ -105,13 +115,16 @@ def initialize():
     os.makedirs(args.log_dir, exist_ok=True)
     logfile = os.path.join(args.log_dir,
         #'cifar10_{}_ep{}_bs{}_kfac{}_{}_gpu{}.log'.format(args.model, args.epochs, args.batch_size, args.kfac_update_freq, args.kfac_name, hvd.size()))
-        'cifar10_{}_ep{}_bs{}_gpu{}_kfac{}_{}_{}.log'.format(args.model, args.epochs, args.batch_size, hvd.size(), args.kfac_update_freq, args.kfac_name, args.exclude_parts))
+        #'cifar10_{}_ep{}_bs{}_gpu{}_kfac{}_{}_{}.log'.format(args.model, args.epochs, args.batch_size, hvd.size(), args.kfac_update_freq, args.kfac_name, args.exclude_parts))
+        'cifar10_{}_ep{}_bs{}_gpu{}_kfac{}_{}_{}.log'.format(args.model, args.epochs, args.batch_size, dist.get_rank(), args.kfac_update_freq, args.kfac_name, args.exclude_parts))
 
     hdlr = logging.FileHandler(logfile)
     hdlr.setFormatter(formatter)
     logger.addHandler(hdlr) 
 
-    args.verbose = True if hvd.rank() == 0 else False
+    #args.verbose = True if hvd.rank() == 0 else False
+    args.verbose = True if dist.get_rank() == 0 else False
+    
     if args.verbose:
         logger.info("torch version: %s", torch.__version__)
         logger.info(args)
