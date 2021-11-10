@@ -29,8 +29,8 @@ from utils import *
 #import kfac
 import kfac_refactor as kfac
 
-from backend import *
-#import horovod.torch as hvd
+from backend import comm_backend, init_comm_backend
+# import horovod.torch as hvd
 #import torch.distributed as dist
 
 def initialize():
@@ -99,13 +99,16 @@ def initialize():
     args.use_kfac = True if args.kfac_update_freq > 0 else False
     
     # Comm backend init
-    #comm_backend = HorovodBackend()
-    comm_backend = TorchBackend(args.local_rank)
+    args.horovod = False
+    if args.horovod:
+        init_comm_backend(backend="Horovod")
+    else:
+        init_comm_backend(backend="Torch", local_rank=args.local_rank)
+
     logger.info("GPU %s out of %s GPUs", comm_backend.rank(), comm_backend.size())
 
     torch.manual_seed(args.seed)
     if args.cuda:
-        #torch.cuda.set_device(hvd.local_rank())
         torch.cuda.set_device(comm_backend.local_rank())
         torch.cuda.manual_seed(args.seed)
 
@@ -116,14 +119,13 @@ def initialize():
     logfile = os.path.join(args.log_dir,
         #'cifar10_{}_ep{}_bs{}_kfac{}_{}_gpu{}.log'.format(args.model, args.epochs, args.batch_size, args.kfac_update_freq, args.kfac_name, hvd.size()))
         #'cifar10_{}_ep{}_bs{}_gpu{}_kfac{}_{}_{}.log'.format(args.model, args.epochs, args.batch_size, hvd.size(), args.kfac_update_freq, args.kfac_name, args.exclude_parts))
-        'cifar10_{}_ep{}_bs{}_gpu{}_kfac{}_{}_{}.log'.format(args.model, args.epochs, args.batch_size, dist.get_rank(), args.kfac_update_freq, args.kfac_name, args.exclude_parts))
+        'cifar10_{}_ep{}_bs{}_gpu{}_kfac{}_{}_{}.log'.format(args.model, args.epochs, args.batch_size, comm_backend.size(), args.kfac_update_freq, args.kfac_name, args.exclude_parts))
 
     hdlr = logging.FileHandler(logfile)
     hdlr.setFormatter(formatter)
     logger.addHandler(hdlr) 
 
-    #args.verbose = True if hvd.rank() == 0 else False
-    args.verbose = True if dist.get_rank() == 0 else False
+    args.verbose = True if comm_backend.rank() == 0 else False
     
     if args.verbose:
         logger.info("torch version: %s", torch.__version__)
@@ -153,14 +155,14 @@ def get_dataset(args):
 
     # Use DistributedSampler to partition the training data.
     train_sampler = torch.utils.data.distributed.DistributedSampler(
-            train_dataset, num_replicas=hvd.size(), rank=hvd.rank())
+            train_dataset, num_replicas=comm_backend.size(), rank=comm_backend.rank())
     #train_loader = torch.utils.data.DataLoader(train_dataset,
     train_loader = MultiEpochsDataLoader(train_dataset,
             batch_size=args.batch_size, sampler=train_sampler, **kwargs)
 
     # Use DistributedSampler to partition the test data.
     test_sampler = torch.utils.data.distributed.DistributedSampler(
-            test_dataset, num_replicas=hvd.size(), rank=hvd.rank())
+            test_dataset, num_replicas=comm_backend.size(), rank=comm_backend.rank())
     #test_loader = torch.utils.data.DataLoader(test_dataset, 
     test_loader = MultiEpochsDataLoader(test_dataset, 
             batch_size=args.test_batch_size, sampler=test_sampler, **kwargs)
@@ -187,7 +189,7 @@ def get_model(args):
     # Optimizer
     criterion = nn.CrossEntropyLoss()
 
-    args.base_lr = args.base_lr * hvd.size()
+    args.base_lr = args.base_lr * comm_backend.size()
     optimizer = optim.SGD(model.parameters(), 
             lr=args.base_lr, 
             momentum=args.momentum,
@@ -213,19 +215,22 @@ def get_model(args):
         preconditioner = None
 
     # Distributed Optimizer
-    compression = hvd.Compression.fp16 if args.fp16_allreduce else hvd.Compression.none
-    optimizer = hvd.DistributedOptimizer(optimizer, 
-                                         named_parameters=model.named_parameters(),
-                                         compression=compression,
-                                         op=hvd.Average,
-                                         backward_passes_per_step=1)
-
-    if hvd.size() > 1:
-        hvd.broadcast_optimizer_state(optimizer, root_rank=0)
-        hvd.broadcast_parameters(model.state_dict(), root_rank=0)
+    if args.horovod:
+        import horovod.torch as hvd
+        compression = hvd.Compression.fp16 if args.fp16_allreduce else hvd.Compression.none
+        optimizer = hvd.DistributedOptimizer(optimizer, 
+                                            named_parameters=model.named_parameters(),
+                                            compression=compression,
+                                            op=hvd.Average,
+                                            backward_passes_per_step=1)
+        if hvd.size() > 1:
+            hvd.broadcast_optimizer_state(optimizer, root_rank=0)
+            hvd.broadcast_parameters(model.state_dict(), root_rank=0)
+    else:
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank])
 
     # Learning Rate Schedule
-    lrs = create_lr_schedule(hvd.size(), args.warmup_epochs, args.lr_decay)
+    lrs = create_lr_schedule(comm_backend.size(), args.warmup_epochs, args.lr_decay)
     lr_scheduler = [LambdaLR(optimizer, lrs)]
     if preconditioner is not None:
         lr_scheduler.append(LambdaLR(preconditioner, lrs))

@@ -3,6 +3,17 @@ import horovod.torch as hvd
 import torch.distributed as dist
 
 
+# global backend object
+comm_backend = None
+
+def init_comm_backend(backend, local_rank):
+    global comm_backend
+    if comm_backend is None:
+        if backend == "Horovod":
+            comm_back = HorovodBackend()
+        elif backend == "Torch":
+            comm_back = TorchBackend(local_rank)
+
 class HorovodBackend:
     """
     Collective communication backend based on Horovod
@@ -18,8 +29,6 @@ class HorovodBackend:
 
     def rank(self):
         return hvd.rank()
-
-
 
 
 class TorchBackend:
