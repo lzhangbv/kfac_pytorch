@@ -4,6 +4,7 @@ import torch.optim as optim
 import horovod.torch as hvd
 import numpy as np
 
+from distutils.version import LooseVersion
 import logging
 logger = logging.getLogger()
 
@@ -115,7 +116,8 @@ class KFAC(optim.Optimizer):
                     continue # exclude the pre-softmax linear layer in the Transformer model
                 self.modules.append(module)
                 module.register_forward_pre_hook(self._forward_hook_event)
-                module.register_backward_hook(self._backward_hook_event)
+                # module.register_backward_hook(self._backward_hook_event)  # used in pytorch1.4
+                module.register_full_backward_hook(self._backward_hook_event)   # used in pytorch1.8
                 module_name = 'module_name_%s_%d' % (classname, name_idx)
                 self.module_names.append(module_name)
                 name_idx += 1
