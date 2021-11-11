@@ -2,10 +2,13 @@ import torch
 import horovod.torch as hvd
 import torch.distributed as dist
 import os
+import enum
 
 
 """
-Usuage:
+Collective Communication Backend
+
+Usage:
     import kfac.backend as backend
     
     hvd.init() or dist.init()
@@ -13,9 +16,16 @@ Usuage:
     backend.comm.APIs()
 """
 
+
 # global comm object
 comm = None
 
+# communicate operations
+class Ops(enum.Enum):
+    Average = "average"
+    Sum = "sum"
+
+# init backend
 def init(backend):
     global comm
     if comm is None:
@@ -37,13 +47,14 @@ def _get_comm_backend(backend):
         else:
             return RuntimeError('The backend is not implemented. Now only Horovod and Torch are supported.')
 
+
 class _HorovodBackend:
     """
     Collective communication backend based on Horovod
     """
     def __init__(self):
-        #hvd.init()
-        pass
+        self.Average = Ops.Average
+        self.Sum = Ops.Sum
 
     def size(self):
         return hvd.size()
@@ -54,14 +65,46 @@ class _HorovodBackend:
     def rank(self):
         return hvd.rank()
 
+    def _get_op(self, op):
+        if op == Ops.Average:
+            return hvd.Average
+        elif op == Ops.Sum:
+            return hvd.Sum
+        else:
+            raise ValueError('Unknown communication operation {}'.format(op))
+    
+    def allreduce(self, tensor, name=None, op=Ops.Average):
+        self.allreduce_(tensor, name, op)
+
+    def allreduce_(self, tensor, name=None, op=Ops.Average):
+        op = self._get_op(op)
+        hvd.allreduce_(tensor, name=name, op=op)
+
+    def allreduce_async_(self, tensor, name=None, op=Ops.Average):
+        op = self._get_op(op)
+        return hvd.allreduce_async_(tensor, name=name, op=op)
+
+    def broadcast(self, tensor, src, group=None, name=None):
+        self.broadcast_(tensor, src, group, name)
+    
+    def broadcast_(self, tensor, src, group=None, name=None):
+        hvd.broadcast_(tensor, root_rank=src, name=name)
+    
+    def broadcast_async_(self, tensor, src, group=None, name=None):
+        return hvd.broadcast_async_(tensor, root_rank=src, name=name)
+
+    def synchronize(self, handle):
+        return hvd.synchronize(handle)
+
+
 
 class _TorchBackend:
     """
     Collective communication backend based on Pytorch DDP
     """
     def __init__(self):
-        #dist.init_process_group(backend='nccl', init_method='env://')
-        pass
+        self.Average = Ops.Average
+        self.Sum = Ops.Sum
 
     def size(self):
         return dist.get_world_size()
@@ -75,3 +118,37 @@ class _TorchBackend:
     def rank(self):
         return dist.get_rank()
         
+    def allreduce(self, tensor, name=None, op=Ops.Average):
+        self.allreduce_(tensor, name, op)
+
+    def allreduce_(self, tensor, name=None, op=Ops.Average):
+        dist.all_reduce(tensor, async_op=False)
+        if op == Ops.Average:
+            tensor.div_(self.size())
+
+    def allreduce_async_(self, tensor, name=None, op=Ops.Average):
+        handle = dist.all_reduce(tensor, async_op=True)
+        if op == Ops.Sum:
+            return handle
+        else:
+            return (handle, tensor) # wait to be averaged
+
+    def broadcast(self, tensor, src, group=None, name=None):
+        self.broadcast_(tensor, src, group, name)
+    
+    def broadcast_(self, tensor, src, group=None, name=None):
+        dist.broadcast(tensor, src=src, async_op=False)
+    
+    def broadcast_async_(self, tensor, src, group=None, name=None):
+        return dist.broadcast(tensor, src=src, async_op=True)
+
+    def synchronize(self, handle):
+        if isinstance(handle, tuple):
+            h, tensor = handle
+            h.wait()
+            tensor.div_(self.size())
+        else:
+            handle.wait()
+        return hvd.synchronize(handle)
+
+

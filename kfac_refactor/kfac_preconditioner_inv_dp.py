@@ -1,8 +1,9 @@
 import math
 import torch
 import torch.optim as optim
-import horovod.torch as hvd
 import numpy as np
+#import horovod.torch as hvd
+import kfac_refactor.backend as backend  # hvd -> backend.comm
 
 from kfac_refactor.utils import (ComputeA, ComputeG)
 from kfac_refactor.utils import update_running_avg
@@ -62,14 +63,14 @@ class KFAC(KFAC_INV):
         """Hook for saving input distributively"""
         if self.hook_enabled and torch.is_grad_enabled() and self.steps % self.fac_update_freq == 0:
             rank_a, _ = self.module_ranks[module]
-            if hvd.rank() == rank_a:
+            if backend.comm.rank() == rank_a:
                 self.m_a[module] = input[0].data
 
     def _backward_hook_event(self, module, grad_input, grad_output):
         """Hook for saving output gradient distributively"""
         if self.hook_enabled and self.steps % self.fac_update_freq == 0:
             _, rank_g = self.module_ranks[module]
-            if hvd.rank() == rank_g:
+            if backend.comm.rank() == rank_g:
                 self.m_g[module] = grad_output[0].data
 
     ### Compute KFs distributively
@@ -78,13 +79,13 @@ class KFAC(KFAC_INV):
         for module in self.modules:
             rank_a, rank_g = self.module_ranks[module]
             
-            if hvd.rank() == rank_a:
+            if backend.comm.rank() == rank_a:
                 A = self.computeA(self.m_a[module], module)
                 if self.steps == 0: # initialize memory as A=I
                     self.m_A[module] = torch.diag(A.new_ones(A.shape[0]))
                 update_running_avg(A, self.m_A[module], self.factor_decay)
 
-            if hvd.rank() == rank_g:
+            if backend.comm.rank() == rank_g:
                 G = self.computeG(self.m_g[module], module, batch_averaged=True)
                 if self.steps == 0: # initialize memory as G=I
                     self.m_G[module] = torch.diag(G.new_ones(G.shape[0]))
@@ -100,14 +101,14 @@ class KFAC(KFAC_INV):
         """Compute inverse factors distributively"""
         for module in self.modules:
             rank_a, rank_g = self.module_ranks[module]
-            if hvd.rank() == rank_a:
+            if backend.comm.rank() == rank_a:
                 # if self.steps == 0: # initialize memory as inv_A=0
                 #     A = self.m_A[module]
                 #     self.m_inv_A[module] = A.new_zeros(A.shape)
                 A = self._add_value_to_diagonal(self.m_A[module], self.damping)
                 self.m_inv_A[module] = mat_inv(A)
 
-            if hvd.rank() == rank_g:
+            if backend.comm.rank() == rank_g:
                 # if self.steps == 0: # initialize memory as inv_G=0
                 #     G = self.m_G[module]
                 #     self.m_inv_G[module] = G.new_zeros(G.shape)             
@@ -122,7 +123,7 @@ class KFAC(KFAC_INV):
             rank_a, rank_g = self.module_ranks[module]
             assert rank_a == rank_g
             
-            if hvd.rank() == rank_a:
+            if backend.comm.rank() == rank_a:
                 grad = self._get_grad(module)
                 self.m_precon_grad[module] = self.m_inv_G[module] @ grad @ self.m_inv_A[module]
             elif self.steps == 0: # initialize memory on other workers for broadcast

@@ -31,8 +31,8 @@ from utils import *
 import kfac_refactor as kfac
 import kfac_refactor.backend as backend #don't use a from import
 
-#import horovod.torch as hvd
-#import torch.distributed as dist
+import horovod.torch as hvd
+import torch.distributed as dist
 
 def initialize():
     # Training Parameters
@@ -45,6 +45,8 @@ def initialize():
                         help='input batch size for testing (default: 128)')
     parser.add_argument('--epochs', type=int, default=200, metavar='N',
                         help='number of epochs to train (default: 200)')
+    parser.add_argument('--horovod', type=int, default=1, metavar='N',
+                        help='whether use horovod as communication backend (default: 1)')
 
     # SGD Parameters
     parser.add_argument('--base-lr', type=float, default=0.1, metavar='LR',
@@ -100,10 +102,11 @@ def initialize():
     args.use_kfac = True if args.kfac_update_freq > 0 else False
     
     # Comm backend init
-    args.horovod = True #False
+    # args.horovod = False
     if args.horovod:
         hvd.init()
         backend.init("Horovod")
+        args.local_rank = backend.comm.local_rank()
     else:
         dist.init_process_group(backend='nccl', init_method='env://')
         backend.init("Torch")
@@ -112,8 +115,7 @@ def initialize():
 
     torch.manual_seed(args.seed)
     if args.cuda:
-        torch.cuda.set_device(backend.comm.local_rank())
-        #torch.cuda.set_device(args.local_rank)
+        torch.cuda.set_device(args.local_rank)
         torch.cuda.manual_seed(args.seed)
 
     torch.backends.cudnn.benchmark = True
@@ -285,7 +287,8 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, criterion, trai
         fwbwtime = time.time()
         fwbwtimes.append(fwbwtime-iotime)
 
-        optimizer.synchronize()
+        if args.horovod:
+            optimizer.synchronize()
         commtime = time.time()
         commtimes.append(commtime-fwbwtime)
         
@@ -294,8 +297,12 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, criterion, trai
         kfactime = time.time()
         kfactimes.append(kfactime-commtime)
     
-        with optimizer.skip_synchronize():
+        if args.horovod:
+            with optimizer.skip_synchronize():
+                optimizer.step()
+        else:
             optimizer.step()
+
         updatetime=time.time()
         uptimes.append(updatetime-kfactime)
         avg_time += (time.time()-stime)

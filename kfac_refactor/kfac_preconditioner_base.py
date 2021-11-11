@@ -1,8 +1,9 @@
 import math
 import torch
 import torch.optim as optim
-import horovod.torch as hvd
 import numpy as np
+#import horovod.torch as hvd
+import kfac_refactor.backend as backend
 
 from distutils.version import LooseVersion
 import logging
@@ -121,7 +122,7 @@ class KFAC(optim.Optimizer):
                 module_name = 'module_name_%s_%d' % (classname, name_idx)
                 self.module_names.append(module_name)
                 name_idx += 1
-        #if hvd.rank() == 0:
+        #if backend.comm.rank() == 0:
         #    logger.info("#register modules: %s", len(self.modules))
 
     ### Schedule KFs
@@ -190,7 +191,7 @@ class KFAC(optim.Optimizer):
             if not self.exclude_compute_factor:
                 self._compute_factors()
             if not self.exclude_communicate_factor:
-                if hvd.size() > 1:
+                if backend.comm.size() > 1:
                     self._communicate_factors()
         
         # (2) compute and/or communicate inverse KFs
@@ -198,7 +199,7 @@ class KFAC(optim.Optimizer):
             if not self.exclude_compute_inverse:
                 self._compute_inverse()
             if not self.exclude_communicate_inverse and self.communicate_inverse_or_not:
-                if hvd.size() > 1:
+                if backend.comm.size() > 1:
                    self._communicate_inverse()
                     
         # (3) compute and/or communicate preconditioned gradients
@@ -206,7 +207,7 @@ class KFAC(optim.Optimizer):
             self._compute_pred()
 
         if not self.exclude_communicate_inverse and not self.communicate_inverse_or_not:
-            if hvd.size() > 1:
+            if backend.comm.size() > 1:
                 self._communicate_pred()
         
         # (4) update preconditioned gradients in place

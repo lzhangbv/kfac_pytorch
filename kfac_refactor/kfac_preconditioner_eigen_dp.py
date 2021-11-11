@@ -1,8 +1,9 @@
 import math
 import torch
 import torch.optim as optim
-import horovod.torch as hvd
 import numpy as np
+#import horovod.torch as hvd
+import kfac_refactor.backend as backend
 
 from kfac_refactor.utils import (ComputeA, ComputeG)
 from kfac_refactor.utils import update_running_avg
@@ -65,12 +66,12 @@ class KFAC(KFAC_INV_DP):
         """Eigen-decompose factors distributively"""
         for module in self.modules:
             rank_a, rank_g = self.module_ranks[module]
-            if hvd.rank() == rank_a:
+            if backend.comm.rank() == rank_a:
                 dA, QA = tcmm.f_symeig(self.m_A[module])
                 self.m_QA[module] = QA.transpose(-2, -1).contiguous()
                 self.m_dA[module] = torch.mul(dA, (dA > self.eps).float())
 
-            if hvd.rank() == rank_g:
+            if backend.comm.rank() == rank_g:
                 dG, QG = tcmm.f_symeig(self.m_G[module])
                 self.m_QG[module] = QG.transpose(-2, -1).contiguous()
                 self.m_dG[module] = torch.mul(dG, (dG > self.eps).float())
@@ -83,7 +84,7 @@ class KFAC(KFAC_INV_DP):
             rank_a, rank_g = self.module_ranks[module]
             assert rank_a == rank_g
 
-            if hvd.rank() == rank_a:
+            if backend.comm.rank() == rank_a:
                 grad = self._get_grad(module)
                 v1 = self.m_QG[module].t() @ grad @ self.m_QA[module]
                 v2 = v1 / (self.m_dG[module].unsqueeze(1) * self.m_dA[module].unsqueeze(0) + self.damping)

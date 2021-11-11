@@ -47,8 +47,8 @@ if [ "$backend" = "horovod" ]; then
 $MPIPATH/bin/mpirun --oversubscribe --prefix $MPIPATH -np $nworkers -hostfile cluster${nworkers} -bind-to none -map-by slot \
     $params \
     $PY examples/pytorch_cifar10_resnet.py \
-        --base-lr $base_lr --epochs $epochs --kfac-update-freq $kfac --model $dnn --lr-decay $lr_decay --batch-size $batch_size --stat-decay $stat_decay --damping $damping  --kfac-type $kfac_type --kfac-name $kfac_name --exclude-parts ${exclude_parts}
+        --horovod 1 --base-lr $base_lr --epochs $epochs --kfac-update-freq $kfac --model $dnn --lr-decay $lr_decay --batch-size $batch_size --stat-decay $stat_decay --damping $damping  --kfac-type $kfac_type --kfac-name $kfac_name --exclude-parts ${exclude_parts}
 else
 $PY -m torch.distributed.launch --nproc_per_node=4 examples/pytorch_cifar10_resnet.py \
-        --base-lr $base_lr --epochs $epochs --kfac-update-freq $kfac --model $dnn --lr-decay $lr_decay --batch-size $batch_size --stat-decay $stat_decay --damping $damping  --kfac-type $kfac_type --kfac-name $kfac_name --exclude-parts ${exclude_parts}
+        --horovod 0 --base-lr $base_lr --epochs $epochs --kfac-update-freq $kfac --model $dnn --lr-decay $lr_decay --batch-size $batch_size --stat-decay $stat_decay --damping $damping  --kfac-type $kfac_type --kfac-name $kfac_name --exclude-parts ${exclude_parts}
 fi
