@@ -24,12 +24,12 @@ use_adam=0
 base_lr=1e-6
 warmup_epochs=0
 lr_decay="${lr_decay:-200}"
-kfac=1
-fac=1
+kfac=10
+fac=10
 
 kfac_name=eigen_dp
 damping=0.001
-#nworkers=$nworkers n_layers=$n_layers use_adam=$use_adam kfac=$kfac fac=$fac damping=$damping kfac_name=$kfac_name base_lr=$base_lr warmup_epochs=$warmup_epochs lr_decay=$lr_decay batch_size=$batch_size epochs=$epochs bash train_multi30k.sh
+nworkers=$nworkers n_layers=$n_layers use_adam=$use_adam kfac=$kfac fac=$fac damping=$damping kfac_name=$kfac_name base_lr=$base_lr warmup_epochs=$warmup_epochs lr_decay=$lr_decay batch_size=$batch_size epochs=$epochs bash train_multi30k.sh
 
 kfac_name=eigen
 damping=0.001
@@ -38,7 +38,7 @@ damping=0.001
 kfac_name=inverse_dp
 kfac_name=inverse_dp_block
 damping=0.001
-nworkers=$nworkers n_layers=$n_layers use_adam=$use_adam kfac=$kfac fac=$fac damping=$damping kfac_name=$kfac_name base_lr=$base_lr warmup_epochs=$warmup_epochs lr_decay=$lr_decay batch_size=$batch_size epochs=$epochs bash train_multi30k.sh
+#nworkers=$nworkers n_layers=$n_layers use_adam=$use_adam kfac=$kfac fac=$fac damping=$damping kfac_name=$kfac_name base_lr=$base_lr warmup_epochs=$warmup_epochs lr_decay=$lr_decay batch_size=$batch_size epochs=$epochs bash train_multi30k.sh
 
 kfac_name=inverse
 damping=0.01
