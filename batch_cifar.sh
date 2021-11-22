@@ -19,7 +19,7 @@ backend=torch
 
 # mpd-kfac-inv
 kfac_name=inverse
-backend=$backend epochs=$epochs base_lr=$base_lr kfac=1 exclude_parts=$exclude_parts kfac_type=$kfac_type kfac_name=$kfac_name dnn=$dnn nworkers=$nworkers rdma=$rdma batch_size=$batch_size ./train_cifar10.sh
+#backend=$backend epochs=$epochs base_lr=$base_lr kfac=1 exclude_parts=$exclude_parts kfac_type=$kfac_type kfac_name=$kfac_name dnn=$dnn nworkers=$nworkers rdma=$rdma batch_size=$batch_size ./train_cifar10.sh
 
 # mpd-kfac-eigen
 kfac_name=eigen
@@ -27,7 +27,7 @@ kfac_name=eigen
 
 # dp-kfac-inv
 kfac_name=inverse_dp
-backend=$backend epochs=$epochs base_lr=$base_lr kfac=1 exclude_parts=$exclude_parts kfac_type=$kfac_type kfac_name=$kfac_name dnn=$dnn nworkers=$nworkers rdma=$rdma batch_size=$batch_size ./train_cifar10.sh
+#backend=$backend epochs=$epochs base_lr=$base_lr kfac=1 exclude_parts=$exclude_parts kfac_type=$kfac_type kfac_name=$kfac_name dnn=$dnn nworkers=$nworkers rdma=$rdma batch_size=$batch_size ./train_cifar10.sh
 
 # dp-kfac-eigen
 kfac_name=eigen_dp
@@ -35,5 +35,8 @@ kfac_name=eigen_dp
 
 # dp-kfac-inv block
 kfac_name=inverse_dp_block
-backend=$backend epochs=$epochs base_lr=$base_lr kfac=1 exclude_parts=$exclude_parts kfac_type=$kfac_type kfac_name=$kfac_name dnn=$dnn nworkers=$nworkers rdma=$rdma batch_size=$batch_size ./train_cifar10.sh
+#backend=$backend epochs=$epochs base_lr=$base_lr kfac=1 exclude_parts=$exclude_parts kfac_type=$kfac_type kfac_name=$kfac_name dnn=$dnn nworkers=$nworkers rdma=$rdma batch_size=$batch_size ./train_cifar10.sh
 
+# kfac-inv-kaisa
+kfac_name=inverse_kaisa
+backend=$backend epochs=$epochs base_lr=$base_lr kfac=1 exclude_parts=$exclude_parts kfac_type=$kfac_type kfac_name=$kfac_name dnn=$dnn nworkers=$nworkers rdma=$rdma batch_size=$batch_size ./train_cifar10.sh

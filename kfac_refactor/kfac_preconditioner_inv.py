@@ -25,7 +25,7 @@ class KFAC(KFAC_BASE):
       damping (float): Tikhonov damping parameter (default: 0.001)
       fac_update_freq (int): iterations between update KFs (default: 1)
       kfac_update_freq (int): iterations between update inverse gradient (default: 1)
-      communicate_inverse_or_not (bool): choose to communicate inverse KFs or communicate preconditioned gradients
+      communicate_inverse_or_not (bool): choose to communicate inverse KFs or communicate preconditioned gradients (default: False)
       kl_clip (float): clipping parameter for gradient scaling
       factor_decay (float): running average coefficient for KFs
       exclude_vocabulary_size: exclude the pre-softmax linear layer in the Transformer
@@ -38,7 +38,7 @@ class KFAC(KFAC_BASE):
                  damping=0.001,
                  fac_update_freq=1,
                  kfac_update_freq=1,
-                 communicate_inverse_or_not=True,
+                 communicate_inverse_or_not=True, # False
                  kl_clip=0.001,
                  factor_decay=0.95,
                  exclude_vocabulary_size=None,

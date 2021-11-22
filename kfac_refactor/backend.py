@@ -117,6 +117,9 @@ class _TorchBackend:
 
     def rank(self):
         return dist.get_rank()
+
+    def new_group(self, ranks):
+        return dist.new_group(ranks)
         
     def allreduce(self, tensor, name=None, op=Ops.Average):
         self.allreduce_(tensor, name, op)
@@ -137,10 +140,10 @@ class _TorchBackend:
         self.broadcast_(tensor, src, group, name)
     
     def broadcast_(self, tensor, src, group=None, name=None):
-        dist.broadcast(tensor, src=src, async_op=False)
+        dist.broadcast(tensor, src=src, group=group, async_op=False)
     
     def broadcast_async_(self, tensor, src, group=None, name=None):
-        return dist.broadcast(tensor, src=src, async_op=True)
+        return dist.broadcast(tensor, src=src, group=group, async_op=True)
 
     def synchronize(self, handle):
         if isinstance(handle, tuple):
