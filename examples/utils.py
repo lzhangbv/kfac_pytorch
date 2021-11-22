@@ -1,14 +1,15 @@
 import torch
 import torch.nn.functional as F
-import horovod.torch as hvd
+# import horovod.torch as hvd
+import kfac_refactor.backend as backend
 
 def accuracy(output, target):
     # get the index of the max log-probability
     pred = output.max(1, keepdim=True)[1]
-    return pred.eq(target.view_as(pred)).cpu().float().mean()
+    return pred.eq(target.view_as(pred)).float().mean()
 
 def save_checkpoint(model, optimizer, checkpoint_format, epoch):
-    if hvd.rank() == 0:
+    if backend.comm.rank() == 0:
         filepath = checkpoint_format.format(epoch=epoch + 1)
         state = {
             'model': model.state_dict(),
@@ -31,8 +32,8 @@ class LabelSmoothLoss(torch.nn.Module):
         return loss
 
 def metric_average(val_tensor):
-    avg_tensor = hvd.allreduce(val_tensor)
-    return avg_tensor.item()
+    backend.comm.allreduce(val_tensor)
+    return val_tensor.item()
 
 # Horovod: average metrics from distributed training.
 class Metric(object):
@@ -42,7 +43,8 @@ class Metric(object):
         self.n = torch.tensor(0.)
 
     def update(self, val, n=1):
-        self.sum += float(hvd.allreduce(val.detach().cpu(), name=self.name))
+        backend.comm.allreduce(val, name=self.name)
+        self.sum += float(val)
         self.n += n
 
     @property

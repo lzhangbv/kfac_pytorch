@@ -26,9 +26,13 @@ import torch.multiprocessing as mp
 
 import cifar_resnet as resnet
 from utils import *
+
 #import kfac
 import kfac_refactor as kfac
+import kfac_refactor.backend as backend #don't use a from import
+
 import horovod.torch as hvd
+import torch.distributed as dist
 
 def initialize():
     # Training Parameters
@@ -41,6 +45,8 @@ def initialize():
                         help='input batch size for testing (default: 128)')
     parser.add_argument('--epochs', type=int, default=200, metavar='N',
                         help='number of epochs to train (default: 200)')
+    parser.add_argument('--horovod', type=int, default=1, metavar='N',
+                        help='whether use horovod as communication backend (default: 1)')
 
     # SGD Parameters
     parser.add_argument('--base-lr', type=float, default=0.1, metavar='LR',
@@ -84,6 +90,10 @@ def initialize():
                         help='random seed (default: 42)')
     parser.add_argument('--fp16-allreduce', action='store_true', default=False,
                         help='use fp16 compression during allreduce')
+    
+    # Set automatically by torch distributed launch
+    parser.add_argument('--local_rank', type=int, default=0,
+                        help='local rank for distributed training')
 
     args = parser.parse_args()
 
@@ -91,12 +101,21 @@ def initialize():
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     args.use_kfac = True if args.kfac_update_freq > 0 else False
     
+    # Comm backend init
+    # args.horovod = False
+    if args.horovod:
+        hvd.init()
+        backend.init("Horovod")
+        args.local_rank = backend.comm.local_rank()
+    else:
+        dist.init_process_group(backend='nccl', init_method='env://')
+        backend.init("Torch")
 
-    hvd.init()
+    logger.info("GPU %s out of %s GPUs", backend.comm.rank(), backend.comm.size())
 
     torch.manual_seed(args.seed)
     if args.cuda:
-        torch.cuda.set_device(hvd.local_rank())
+        torch.cuda.set_device(args.local_rank)
         torch.cuda.manual_seed(args.seed)
 
     torch.backends.cudnn.benchmark = True
@@ -105,13 +124,15 @@ def initialize():
     os.makedirs(args.log_dir, exist_ok=True)
     logfile = os.path.join(args.log_dir,
         #'cifar10_{}_ep{}_bs{}_kfac{}_{}_gpu{}.log'.format(args.model, args.epochs, args.batch_size, args.kfac_update_freq, args.kfac_name, hvd.size()))
-        'cifar10_{}_ep{}_bs{}_gpu{}_kfac{}_{}_{}.log'.format(args.model, args.epochs, args.batch_size, hvd.size(), args.kfac_update_freq, args.kfac_name, args.exclude_parts))
+        #'cifar10_{}_ep{}_bs{}_gpu{}_kfac{}_{}_{}.log'.format(args.model, args.epochs, args.batch_size, hvd.size(), args.kfac_update_freq, args.kfac_name, args.exclude_parts))
+        'cifar10_{}_ep{}_bs{}_gpu{}_kfac{}_{}_{}.log'.format(args.model, args.epochs, args.batch_size, backend.comm.size(), args.kfac_update_freq, args.kfac_name, args.exclude_parts))
 
     hdlr = logging.FileHandler(logfile)
     hdlr.setFormatter(formatter)
     logger.addHandler(hdlr) 
 
-    args.verbose = True if hvd.rank() == 0 else False
+    args.verbose = True if backend.comm.rank() == 0 else False
+    
     if args.verbose:
         logger.info("torch version: %s", torch.__version__)
         logger.info(args)
@@ -140,14 +161,14 @@ def get_dataset(args):
 
     # Use DistributedSampler to partition the training data.
     train_sampler = torch.utils.data.distributed.DistributedSampler(
-            train_dataset, num_replicas=hvd.size(), rank=hvd.rank())
+            train_dataset, num_replicas=backend.comm.size(), rank=backend.comm.rank())
     #train_loader = torch.utils.data.DataLoader(train_dataset,
     train_loader = MultiEpochsDataLoader(train_dataset,
             batch_size=args.batch_size, sampler=train_sampler, **kwargs)
 
     # Use DistributedSampler to partition the test data.
     test_sampler = torch.utils.data.distributed.DistributedSampler(
-            test_dataset, num_replicas=hvd.size(), rank=hvd.rank())
+            test_dataset, num_replicas=backend.comm.size(), rank=backend.comm.rank())
     #test_loader = torch.utils.data.DataLoader(test_dataset, 
     test_loader = MultiEpochsDataLoader(test_dataset, 
             batch_size=args.test_batch_size, sampler=test_sampler, **kwargs)
@@ -174,7 +195,7 @@ def get_model(args):
     # Optimizer
     criterion = nn.CrossEntropyLoss()
 
-    args.base_lr = args.base_lr * hvd.size()
+    args.base_lr = args.base_lr * backend.comm.size()
     optimizer = optim.SGD(model.parameters(), 
             lr=args.base_lr, 
             momentum=args.momentum,
@@ -200,19 +221,22 @@ def get_model(args):
         preconditioner = None
 
     # Distributed Optimizer
-    compression = hvd.Compression.fp16 if args.fp16_allreduce else hvd.Compression.none
-    optimizer = hvd.DistributedOptimizer(optimizer, 
-                                         named_parameters=model.named_parameters(),
-                                         compression=compression,
-                                         op=hvd.Average,
-                                         backward_passes_per_step=1)
-
-    if hvd.size() > 1:
-        hvd.broadcast_optimizer_state(optimizer, root_rank=0)
-        hvd.broadcast_parameters(model.state_dict(), root_rank=0)
+    if args.horovod:
+        import horovod.torch as hvd
+        compression = hvd.Compression.fp16 if args.fp16_allreduce else hvd.Compression.none
+        optimizer = hvd.DistributedOptimizer(optimizer, 
+                                            named_parameters=model.named_parameters(),
+                                            compression=compression,
+                                            op=hvd.Average,
+                                            backward_passes_per_step=1)
+        if hvd.size() > 1:
+            hvd.broadcast_optimizer_state(optimizer, root_rank=0)
+            hvd.broadcast_parameters(model.state_dict(), root_rank=0)
+    else:
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank])
 
     # Learning Rate Schedule
-    lrs = create_lr_schedule(hvd.size(), args.warmup_epochs, args.lr_decay)
+    lrs = create_lr_schedule(backend.comm.size(), args.warmup_epochs, args.lr_decay)
     lr_scheduler = [LambdaLR(optimizer, lrs)]
     if preconditioner is not None:
         lr_scheduler.append(LambdaLR(preconditioner, lrs))
@@ -263,7 +287,8 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, criterion, trai
         fwbwtime = time.time()
         fwbwtimes.append(fwbwtime-iotime)
 
-        optimizer.synchronize()
+        if args.horovod:
+            optimizer.synchronize()
         commtime = time.time()
         commtimes.append(commtime-fwbwtime)
         
@@ -272,8 +297,12 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, criterion, trai
         kfactime = time.time()
         kfactimes.append(kfactime-commtime)
     
-        with optimizer.skip_synchronize():
+        if args.horovod:
+            with optimizer.skip_synchronize():
+                optimizer.step()
+        else:
             optimizer.step()
+
         updatetime=time.time()
         uptimes.append(updatetime-kfactime)
         avg_time += (time.time()-stime)

@@ -1,8 +1,9 @@
 import math
 import torch
 import torch.optim as optim
-import horovod.torch as hvd
 import numpy as np
+#import horovod.torch as hvd
+import kfac_refactor.backend as backend
 
 from kfac_refactor.utils import (ComputeA, ComputeG)
 from kfac_refactor.utils import update_running_avg
@@ -65,7 +66,7 @@ class KFAC(KFAC_INV):
         # Determine whether distribute layer factors (used for rank scheduling)
         if distribute_layer_factors is None:
             self.distribute_layer_factors = True \
-                    if hvd.size() > len(self.modules) else False
+                    if backend.comm.size() > len(self.modules) else False
         else:
             self.distribute_layer_factors = distribute_layer_factors
 
@@ -79,17 +80,17 @@ class KFAC(KFAC_INV):
         module_ranks = {}
         rank_iter = 0
         for module in self.modules:
-            rank_a = rank_iter % hvd.size()
+            rank_a = rank_iter % backend.comm.size()
             if self.distribute_layer_factors:
                 rank_iter += 1
-                rank_g = rank_iter % hvd.size()
+                rank_g = rank_iter % backend.comm.size()
             else:
                 rank_g = rank_a
             module_ranks[module] = (rank_a, rank_g)
             rank_iter += 1
 
         self.module_ranks = module_ranks
-        if hvd.rank() == 0:
+        if backend.comm.rank() == 0:
             logger.info('module_ranks: %s', module_ranks.values())
     
 
@@ -106,12 +107,13 @@ class KFAC(KFAC_INV):
                 self.m_QG[module] = G.new_zeros(G.shape)
 
             rank_a, rank_g = self.module_ranks[module]
-            if hvd.rank() == rank_a:
+
+            if backend.comm.rank() == rank_a:
                 dA, QA = mat_eig(self.m_A[module])
                 self.m_QA[module] = QA
                 self.m_dA[module] = torch.mul(dA, (dA > self.eps).float())
 
-            if hvd.rank() == rank_g:
+            if backend.comm.rank() == rank_g:
                 dG, QG = mat_eig(self.m_G[module])
                 self.m_QG[module] = QG
                 self.m_dG[module] = torch.mul(dG, (dG > self.eps).float())
@@ -123,13 +125,13 @@ class KFAC(KFAC_INV):
 
         for m in self.modules: 
             rank_a, rank_g = self.module_ranks[m]
-            handles.append(hvd.broadcast_async_(self.m_QA[m], rank_a))
-            handles.append(hvd.broadcast_async_(self.m_dA[m], rank_a))
-            handles.append(hvd.broadcast_async_(self.m_QG[m], rank_g))
-            handles.append(hvd.broadcast_async_(self.m_dG[m], rank_g))
+            handles.append(backend.comm.broadcast_async_(self.m_QA[m], rank_a))
+            handles.append(backend.comm.broadcast_async_(self.m_dA[m], rank_a))
+            handles.append(backend.comm.broadcast_async_(self.m_QG[m], rank_g))
+            handles.append(backend.comm.broadcast_async_(self.m_dG[m], rank_g))
 
         for handle in handles:
-            hvd.synchronize(handle)
+            backend.comm.synchronize(handle)
 
     ### Compute Preconditioned Gradients
     def _compute_pred(self):

@@ -1,8 +1,9 @@
 import math
 import torch
 import torch.optim as optim
-import horovod.torch as hvd
 import numpy as np
+#import horovod.torch as hvd
+import kfac_refactor.backend as backend  # hvd -> backend.comm
 
 from kfac_refactor.utils import (ComputeA, ComputeG)
 from kfac_refactor.utils import update_running_avg
@@ -24,7 +25,7 @@ class KFAC(KFAC_BASE):
       damping (float): Tikhonov damping parameter (default: 0.001)
       fac_update_freq (int): iterations between update KFs (default: 1)
       kfac_update_freq (int): iterations between update inverse gradient (default: 1)
-      communicate_inverse_or_not (bool): choose to communicate inverse KFs or communicate preconditioned gradients
+      communicate_inverse_or_not (bool): choose to communicate inverse KFs or communicate preconditioned gradients (default: False)
       kl_clip (float): clipping parameter for gradient scaling
       factor_decay (float): running average coefficient for KFs
       exclude_vocabulary_size: exclude the pre-softmax linear layer in the Transformer
@@ -37,7 +38,7 @@ class KFAC(KFAC_BASE):
                  damping=0.001,
                  fac_update_freq=1,
                  kfac_update_freq=1,
-                 communicate_inverse_or_not=True,
+                 communicate_inverse_or_not=True, # False
                  kl_clip=0.001,
                  factor_decay=0.95,
                  exclude_vocabulary_size=None,
@@ -66,13 +67,13 @@ class KFAC(KFAC_BASE):
         module_ranks = {}
         rank_iter = 0
         for module in self.modules:
-            rank_a = rank_iter % hvd.size()
+            rank_a = rank_iter % backend.comm.size()
             rank_g = rank_a
             module_ranks[module] = (rank_a, rank_g)
             rank_iter += 1
 
         self.module_ranks = module_ranks
-        if hvd.rank() == 0:
+        if backend.comm.rank() == 0:
             logger.info('module_ranks: %s', module_ranks.values())
     
     ### Compute KFs
@@ -95,11 +96,11 @@ class KFAC(KFAC_BASE):
         handles = []
         
         for m in self.modules:
-            handles.append(hvd.allreduce_async_(self.m_A[m].data, op=hvd.Average))
-            handles.append(hvd.allreduce_async_(self.m_G[m].data, op=hvd.Average))
+            handles.append(backend.comm.allreduce_async_(self.m_A[m].data, op=backend.comm.Average))
+            handles.append(backend.comm.allreduce_async_(self.m_G[m].data, op=backend.comm.Average))
         
         for handle in handles:
-            hvd.synchronize(handle)
+            backend.comm.synchronize(handle)
 
     ### Compute Inverse KFs
     def _add_value_to_diagonal(self, X, value):
@@ -115,11 +116,11 @@ class KFAC(KFAC_BASE):
                 self.m_inv_G[module] = G.new_zeros(G.shape)
             
             rank_a, rank_g = self.module_ranks[module]
-            if hvd.rank() == rank_a:
+            if backend.comm.rank() == rank_a:
                 A = self._add_value_to_diagonal(self.m_A[module], self.damping)
                 self.m_inv_A[module] = mat_inv(A)
 
-            if hvd.rank() == rank_g:
+            if backend.comm.rank() == rank_g:
                 G = self._add_value_to_diagonal(self.m_G[module], self.damping)
                 self.m_inv_G[module] = mat_inv(G)
 
@@ -130,11 +131,11 @@ class KFAC(KFAC_BASE):
 
         for m in self.modules: 
             rank_a, rank_g = self.module_ranks[m]
-            handles.append(hvd.broadcast_async_(self.m_inv_A[m], rank_a))
-            handles.append(hvd.broadcast_async_(self.m_inv_G[m], rank_g))
+            handles.append(backend.comm.broadcast_async_(self.m_inv_A[m], rank_a))
+            handles.append(backend.comm.broadcast_async_(self.m_inv_G[m], rank_g))
 
         for handle in handles:
-            hvd.synchronize(handle)
+            backend.comm.synchronize(handle)
 
     ### Compute Preconditioned Gradients
     def _get_grad(self, module):
@@ -164,10 +165,10 @@ class KFAC(KFAC_BASE):
             rank_a, rank_g = self.module_ranks[m] 
             assert rank_a == rank_g
             v = self.m_precon_grad[m]
-            handles.append(hvd.broadcast_async_(v, rank_a))
+            handles.append(backend.comm.broadcast_async_(v, rank_a))
 
         for handle in handles:
-            hvd.synchronize(handle)
+            backend.comm.synchronize(handle)
 
     ### Update preconditioned gradients in place
     def _reshape_preconditioned_grad(self, module, v):
