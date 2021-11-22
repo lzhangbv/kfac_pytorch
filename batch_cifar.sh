@@ -15,6 +15,7 @@ backend=torch
 #backend=horovod
 
 # s-sgd
+
 #backend=$backend epochs=$epochs base_lr=$base_lr kfac=0 dnn=$dnn nworkers=$nworkers rdma=$rdma batch_size=$batch_size ./train_cifar10.sh
 
 # mpd-kfac-inv

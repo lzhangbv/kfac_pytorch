@@ -20,6 +20,15 @@ def mat_inv(x, method="default"):
     else:
         raise NotImplementedError
 
+def mat_eig(x, method="default"):
+    if method == "default":
+        eigen_val, eigen_vec = torch.linalg.eigh(x)
+        return eigen_val, eigen_vec.contiguous()
+    elif method == "tcmm": # to be fixed, CUDA error: invalid configuration argument (in pytorch1.8)
+        eigen_val, eigen_vec = tcmm.f_symeig(x)
+        return eigen_val, eigen_vec.transpose(-2, -1).contiguous()
+    else:
+        raise NotImplementedError
 
 def try_contiguous(x):
     if not x.is_contiguous():
