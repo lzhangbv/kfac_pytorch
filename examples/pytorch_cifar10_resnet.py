@@ -104,7 +104,10 @@ def initialize():
     # Comm backend init
     # args.horovod = False
     if args.horovod:
-        hvd.init()
+        if args.kfac_name == "inverse_kaisa":
+            hvd.init(process_sets="dynamic")
+        else:
+            hvd.init()
         backend.init("Horovod")
         args.local_rank = backend.comm.local_rank()
     else:

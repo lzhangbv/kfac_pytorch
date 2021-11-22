@@ -64,6 +64,9 @@ class _HorovodBackend:
 
     def rank(self):
         return hvd.rank()
+    
+    def new_group(self, ranks): # support process_sets after v0.23.0
+        return hvd.add_process_set(ranks)
 
     def _get_op(self, op):
         if op == Ops.Average:
@@ -88,10 +91,16 @@ class _HorovodBackend:
         self.broadcast_(tensor, src, group, name)
     
     def broadcast_(self, tensor, src, group=None, name=None):
-        hvd.broadcast_(tensor, root_rank=src, name=name)
+        if group is None:
+            hvd.broadcast_(tensor, root_rank=src, name=name)
+        else:
+            hvd.broadcast_(tensor, root_rank=src, process_set=group, name=name)
     
     def broadcast_async_(self, tensor, src, group=None, name=None):
-        return hvd.broadcast_async_(tensor, root_rank=src, name=name)
+        if group is None:
+            return hvd.broadcast_async_(tensor, root_rank=src, name=name)
+        else:
+            return hvd.broadcast_async_(tensor, root_rank=src, process_set=group, name=name)
 
     def synchronize(self, handle):
         return hvd.synchronize(handle)
