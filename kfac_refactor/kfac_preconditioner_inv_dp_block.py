@@ -58,7 +58,7 @@ class KFAC(KFAC_INV):
                                     hook_enabled=hook_enabled,
                                     exclude_parts=exclude_parts)
         
-        self.diag_blocks = diag_blocks
+        self.diag_blocks = int(diag_blocks)
         self.kfac_batch_size = kfac_batch_size
         if backend.comm.rank() == 0:
             logger.info("diag_blocks: %s, kfac_batch_size: %s", self.diag_blocks, self.kfac_batch_size)
@@ -106,24 +106,23 @@ class KFAC(KFAC_INV):
         pass
 
     ### Compute Inverse KFs distributively
+    def _get_div_points(self, Ntotal, Nsections):
+        """compute div_points to split Ntotal elements into Nsection blocks almost equally"""
+        Neach_section, extras = divmod(Ntotal, Nsections)
+        section_sizes = ([0] + extras * [Neach_section+1] + (Nsections-extras) * [Neach_section])
+        return np.cumsum(section_sizes)
+
     def _invert_diag_blocks(self, KF, inv_KF):
         """invert diag block approximated matrix"""
-        dim = KF.shape[0]
-        n = min(self.diag_blocks, dim)
-        step_dim = dim // n
-        for start_dim in range(0, dim, step_dim):
-            block = KF[start_dim:start_dim+step_dim, start_dim:start_dim+step_dim]
+        Ntotal = KF.shape[0]
+        Nsections = min(self.diag_blocks, Ntotal)
+        div_points = self._get_div_points(Ntotal, Nsections)
+        for i in range(Nsections):
+            st = div_points[i]
+            end = div_points[i + 1]
+            block = KF[st:end, st:end]
             inverse = mat_inv(block)
-            inv_KF.data[start_dim:start_dim+step_dim, start_dim:start_dim+step_dim].copy_(inverse)
-        
-        """implementation with get_block_boundary
-        n = min(self.diag_blocks, KF.shape[0])
-        for i in range(n):
-            start, end = get_block_boundary(i, n, KF.shape)
-            block = KF[start[0]:end[0], start[1]:end[1]]
-            inverse = torchsso.utils.inv(block)
-            inv_KF.data[start[0]:end[0], start[1]:end[1]].copy_(inverse)
-        """
+            inv_KF.data[st:end, st:end].copy_(inverse)
 
     def _compute_inverse(self):
         """Compute inverse factors distributively"""

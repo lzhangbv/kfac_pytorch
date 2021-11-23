@@ -40,4 +40,8 @@ kfac_name=inverse_dp_block
 
 # kfac-inv-kaisa
 kfac_name=inverse_kaisa
+#backend=$backend epochs=$epochs base_lr=$base_lr kfac=1 exclude_parts=$exclude_parts kfac_type=$kfac_type kfac_name=$kfac_name dnn=$dnn nworkers=$nworkers rdma=$rdma batch_size=$batch_size ./train_cifar10.sh
+
+# dp-kfac-inv-hybrid
+kfac_name=inverse_dp_hybrid
 backend=$backend epochs=$epochs base_lr=$base_lr kfac=1 exclude_parts=$exclude_parts kfac_type=$kfac_type kfac_name=$kfac_name dnn=$dnn nworkers=$nworkers rdma=$rdma batch_size=$batch_size ./train_cifar10.sh
