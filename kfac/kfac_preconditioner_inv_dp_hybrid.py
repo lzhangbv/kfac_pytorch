@@ -3,13 +3,13 @@ import torch
 import torch.optim as optim
 import numpy as np
 #import horovod.torch as hvd
-import kfac_refactor.backend as backend  # hvd -> backend.comm
+import kfac.backend as backend  # hvd -> backend.comm
 
-from kfac_refactor.utils import (ComputeA, ComputeG)
-from kfac_refactor.utils import update_running_avg
-from kfac_refactor.utils import get_block_boundary
-from kfac_refactor.utils import mat_inv
-from kfac_refactor.kfac_preconditioner_inv import KFAC as KFAC_INV
+from kfac.utils import (ComputeA, ComputeG)
+from kfac.utils import update_running_avg
+from kfac.utils import get_block_boundary
+from kfac.utils import mat_inv
+from kfac.kfac_preconditioner_inv import KFAC as KFAC_INV
 
 import logging
 logger = logging.getLogger()
@@ -17,8 +17,9 @@ logger = logging.getLogger()
 
 class KFAC(KFAC_INV):
     """
-    Distributed Preconditioning Distributed K-FAC with explicit factor inversion 
-    Refer to: Scalable K-FAC Training for Deep Neural Networks with Distributed Preconditioning (AAAI 2022?)
+    Distributed Preconditioning Distributed K-FAC with hybrid parallelism
+    Experimental: Two-level communications (block-level intra-node InverseComp + layer-level inter-node PredComm)
+    Refer to: block-wise approximation refers to kfac_inv_dp_block; intra-node/inter-node communication refers to kfac_inv_kaisa
     
     Args:
       model (nn): Torch model
@@ -26,7 +27,9 @@ class KFAC(KFAC_INV):
       damping (float): Tikhonov damping parameter (default: 0.001)
       fac_update_freq (int): iterations between update KFs (default: 1)
       kfac_update_freq (int): iterations between update inverse gradient (default: 1)
-      communicate_inverse_or_not (bool): choose to communicate inverse KFs or communicate preconditioned gradients
+      diag_blocks (int): the number of diagonal blocks used to approximate KFs (default: 4)
+      kfac_batch_size (int): the subsampled batch size used to estimate the local KFs (default: 32)
+      ngpu_per_node (int): the per-node number of GPUs or the gradient worker fractional size (default: 4)
       kl_clip (float): clipping parameter for gradient scaling
       factor_decay (float): running average coefficient for KFs
       exclude_vocabulary_size: exclude the pre-softmax linear layer in the Transformer
@@ -39,8 +42,8 @@ class KFAC(KFAC_INV):
                  damping=0.001,
                  fac_update_freq=1,
                  kfac_update_freq=1,
-                 diag_blocks=4, # the number of diagonal blocks used to approximate KFs
-                 kfac_batch_size=32, # the batch size used to estimate the local KFs
+                 diag_blocks=4,
+                 kfac_batch_size=32,
                  ngpu_per_node=4,
                  kl_clip=0.001,
                  factor_decay=0.95,

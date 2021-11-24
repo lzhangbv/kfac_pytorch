@@ -2,44 +2,38 @@ import itertools
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchsso
 import tcmm
 
 TENSOR_CORE=False
 TENSOR_CORE_THRES=1024 #2048*1024
 
+
+def mat_inv(x, method="default"):
+    if method == "default":
+        return torch.linalg.inv(x).contiguous()
+    elif method == "cholesky":
+        u = torch.linalg.cholesky(x)
+        return torch.cholesky_inverse(u).contiguous()
+    elif method == "torchsso": # to be fixed, CUDA error: invalid configuration argument (in pytorch1.8)
+        return torchsso.utils.inv(x)
+    else:
+        raise NotImplementedError
+
+def mat_eig(x, method="default"):
+    if method == "default":
+        eigen_val, eigen_vec = torch.linalg.eigh(x)
+        return eigen_val, eigen_vec.contiguous()
+    elif method == "tcmm": # to be fixed, CUDA error: invalid configuration argument (in pytorch1.8)
+        eigen_val, eigen_vec = tcmm.f_symeig(x)
+        return eigen_val, eigen_vec.transpose(-2, -1).contiguous()
+    else:
+        raise NotImplementedError
+
 def try_contiguous(x):
     if not x.is_contiguous():
         x = x.contiguous()
     return x
-
-class cycle:
-    def __init__(self, iterable):
-        """Iterator that produces tuples indefinitely.
-
-        Example:
-          iterator = tuple_cycle([1,2,3], 2)
-          assert iterator.next(2) == (1, 2)
-          assert iterator.next(1) == (3,)
-          assert iterator.next(4) == (1, 2, 3, 1)
-
-        Args:
-          iterable: Any iterable to iterate over indefinitely
-        """
-        self.iterable = iterable
-        self.reset()
-
-    def reset(self):
-        """Reset iterable to start"""
-        self.iterator = itertools.cycle(self.iterable)
-
-    def next(self, size):
-        """Get next tuple of size in rotation.
-
-        Returns:
-          iterator that returns a tuple of size each time next
-          is called.
-        """
-        return tuple([next(self.iterator) for x in range(size)])
 
 def get_block_boundary(index, block_count, shape):
     """Computes start and end indicies when block diagonalizing a matrix"""

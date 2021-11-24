@@ -44,7 +44,7 @@ from transformer.Optim import LrScheduler
 from transformer.Translator import Translator
 
 #import kfac
-import kfac_refactor as kfac
+import kfac
 os.environ['HOROVOD_NUM_NCCL_STREAMS'] = '1' 
 
 

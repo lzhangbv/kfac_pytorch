@@ -3,12 +3,12 @@ import torch
 import torch.optim as optim
 import numpy as np
 #import horovod.torch as hvd
-import kfac_refactor.backend as backend  # hvd -> backend.comm
+import kfac.backend as backend  # hvd -> backend.comm
 
-from kfac_refactor.utils import (ComputeA, ComputeG)
-from kfac_refactor.utils import update_running_avg
-from kfac_refactor.utils import mat_inv
-from kfac_refactor.kfac_preconditioner_inv import KFAC as KFAC_INV
+from kfac.utils import (ComputeA, ComputeG)
+from kfac.utils import update_running_avg
+from kfac.utils import mat_inv
+from kfac.kfac_preconditioner_inv import KFAC as KFAC_INV
 
 import logging
 logger = logging.getLogger()
@@ -25,7 +25,7 @@ class KFAC(KFAC_INV):
       damping (float): Tikhonov damping parameter (default: 0.001)
       fac_update_freq (int): iterations between update KFs (default: 1)
       kfac_update_freq (int): iterations between update inverse gradient (default: 1)
-      ngpu_per_node: per-node gpu number or gradient worker size (default: 4)
+      ngpu_per_node: per-node gpu number or gradient worker fractional size (default: 4)
       kl_clip (float): clipping parameter for gradient scaling
       factor_decay (float): running average coefficient for KFs
       exclude_vocabulary_size: exclude the pre-softmax linear layer in the Transformer

@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 # import horovod.torch as hvd
-import kfac_refactor.backend as backend
+import kfac.backend as backend
 
 def accuracy(output, target):
     # get the index of the max log-probability

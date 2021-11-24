@@ -3,12 +3,12 @@ import torch
 import torch.optim as optim
 import numpy as np
 #import horovod.torch as hvd
-import kfac_refactor.backend as backend  # hvd -> backend.comm
+import kfac.backend as backend  # hvd -> backend.comm
 
-from kfac_refactor.utils import (ComputeA, ComputeG)
-from kfac_refactor.utils import update_running_avg
-from kfac_refactor.utils import mat_inv
-from kfac_refactor.kfac_preconditioner_inv import KFAC as KFAC_INV
+from kfac.utils import (ComputeA, ComputeG)
+from kfac.utils import update_running_avg
+from kfac.utils import mat_inv
+from kfac.kfac_preconditioner_inv import KFAC as KFAC_INV
 
 import logging
 logger = logging.getLogger()
@@ -25,7 +25,6 @@ class KFAC(KFAC_INV):
       damping (float): Tikhonov damping parameter (default: 0.001)
       fac_update_freq (int): iterations between update KFs (default: 1)
       kfac_update_freq (int): iterations between update inverse gradient (default: 1)
-      communicate_inverse_or_not (bool): choose to communicate inverse KFs or communicate preconditioned gradients
       kl_clip (float): clipping parameter for gradient scaling
       factor_decay (float): running average coefficient for KFs
       exclude_vocabulary_size: exclude the pre-softmax linear layer in the Transformer
@@ -38,7 +37,6 @@ class KFAC(KFAC_INV):
                  damping=0.001,
                  fac_update_freq=1,
                  kfac_update_freq=1,
-                 # communicate_inverse_or_not=False,
                  kl_clip=0.001,
                  factor_decay=0.95,
                  exclude_vocabulary_size=None,

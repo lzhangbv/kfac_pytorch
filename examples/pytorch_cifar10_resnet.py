@@ -27,9 +27,9 @@ import torch.multiprocessing as mp
 import cifar_resnet as resnet
 from utils import *
 
-#import kfac
-import kfac_refactor as kfac
-import kfac_refactor.backend as backend #don't use a from import
+
+import kfac
+import kfac.backend as backend #don't use a `from` import
 
 import horovod.torch as hvd
 import torch.distributed as dist

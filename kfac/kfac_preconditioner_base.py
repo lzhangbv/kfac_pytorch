@@ -3,7 +3,7 @@ import torch
 import torch.optim as optim
 import numpy as np
 #import horovod.torch as hvd
-import kfac_refactor.backend as backend
+import kfac.backend as backend
 
 from distutils.version import LooseVersion
 import logging
@@ -14,6 +14,9 @@ class KFAC(optim.Optimizer):
     """KFAC Distributed Gradient Preconditioner
     
     Usage:
+    --------------------------------------------------------
+    option 1: import horovod.torch as hvd
+    --------------------------------------------------------
       optimizer = optim.SGD(model.parameters(), ...)
       optimizer = hvd.DistributedOptimizer(optimizer, ...)
       preconditioner = KFAC(model, ...)
@@ -27,6 +30,25 @@ class KFAC(optim.Optimizer):
           preconditioner.step()
           with optimizer.skip_synchronize():
               optimizer.step()
+      ...
+    --------------------------------------------------------
+    
+    --------------------------------------------------------
+    option 2: import torch.distributed as dist
+    --------------------------------------------------------
+      model = torch.nn.parallel.DistributedDataParallel(...)
+      optimizer = optim.SGD(model.parameters(), ...)
+      preconditioner = KFAC(model, ...)
+      ... 
+      for i, (data, target) in enumerate(train_loader):
+          optimizer.zero_grad()
+          output = model(data)
+          loss = criterion(output, target)
+          loss.backward()
+          preconditioner.step()
+          optimizer.step()
+      ...
+    --------------------------------------------------------
 
     Args:
       model (nn): Torch model
