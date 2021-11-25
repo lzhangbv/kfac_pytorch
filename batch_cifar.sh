@@ -1,52 +1,33 @@
-dnn=resnet56
-batch_size=50
+horovod=0
 nworkers=4
 rdma=1
+node_rank=1
+node_count=2
+
+dnn=resnet56
+batch_size=50
+epochs=1
 base_lr=0.1
-epochs=1 #100
-
-kfac_type=Femp
-stat_decay=0.5
-damping=0.00005
-#exclude_parts=CommunicateInverse,ComputeInverse,CommunicateFactor,ComputeFactor
-exclude_parts=''
-
-backend=torch
-#backend=horovod
+damping=0.003
 
 # s-sgd
+kfac=0 horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs base_lr=$base_lr damping=$damping bash train_cifar10.sh
 
-#backend=$backend epochs=$epochs base_lr=$base_lr kfac=0 dnn=$dnn nworkers=$nworkers rdma=$rdma batch_size=$batch_size ./train_cifar10.sh
+fac=1
+kfac=1
 
-# mpd-kfac-inv
 kfac_name=inverse
-#backend=$backend epochs=$epochs base_lr=$base_lr kfac=1 exclude_parts=$exclude_parts kfac_type=$kfac_type kfac_name=$kfac_name dnn=$dnn nworkers=$nworkers rdma=$rdma batch_size=$batch_size ./train_cifar10.sh
+kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs base_lr=$base_lr damping=$damping bash train_cifar10.sh
 
-# mpd-kfac-eigen
 kfac_name=eigen
-#backend=$backend epochs=$epochs base_lr=$base_lr kfac=1 exclude_parts=$exclude_parts kfac_type=$kfac_type kfac_name=$kfac_name dnn=$dnn nworkers=$nworkers rdma=$rdma batch_size=$batch_size ./train_cifar10.sh
 
-# dp-kfac-inv
 kfac_name=inverse_dp
-#backend=$backend epochs=$epochs base_lr=$base_lr kfac=1 exclude_parts=$exclude_parts kfac_type=$kfac_type kfac_name=$kfac_name dnn=$dnn nworkers=$nworkers rdma=$rdma batch_size=$batch_size ./train_cifar10.sh
 
-# dp-kfac-eigen
 kfac_name=eigen_dp
-#backend=$backend epochs=$epochs base_lr=$base_lr kfac=1 exclude_parts=$exclude_parts kfac_type=$kfac_type kfac_name=$kfac_name dnn=$dnn nworkers=$nworkers rdma=$rdma batch_size=$batch_size ./train_cifar10.sh
 
-# dp-kfac-inv block
 kfac_name=inverse_dp_block
-#backend=$backend epochs=$epochs base_lr=$base_lr kfac=1 exclude_parts=$exclude_parts kfac_type=$kfac_type kfac_name=$kfac_name dnn=$dnn nworkers=$nworkers rdma=$rdma batch_size=$batch_size ./train_cifar10.sh
 
-# kfac-inv-kaisa
 kfac_name=inverse_kaisa
-#backend=$backend epochs=$epochs base_lr=$base_lr kfac=1 exclude_parts=$exclude_parts kfac_type=$kfac_type kfac_name=$kfac_name dnn=$dnn nworkers=$nworkers rdma=$rdma batch_size=$batch_size ./train_cifar10.sh
 
-# dp-kfac-inv-hybrid
-#kfac_name=inverse_dp_hybrid
-#backend=$backend epochs=$epochs base_lr=$base_lr kfac=1 exclude_parts=$exclude_parts kfac_type=$kfac_type kfac_name=$kfac_name dnn=$dnn nworkers=$nworkers rdma=$rdma batch_size=$batch_size ./train_cifar10.sh
+kfac_name=inverse_dp_hybrid
 
-
-nworkers=4
-kfac_name=inverse_dp
-backend=$backend epochs=$epochs base_lr=$base_lr kfac=1 exclude_parts=$exclude_parts kfac_type=$kfac_type kfac_name=$kfac_name dnn=$dnn nworkers=$nworkers batch_size=$batch_size ./train_cifar10.sh
