@@ -62,7 +62,7 @@ def initialize():
 
 
     # KFAC Parameters
-    parser.add_argument('--kfac-type', type=str, default='F1mc', 
+    parser.add_argument('--kfac-type', type=str, default='Femp', 
                         help='choices: F1mc or Femp') 
     parser.add_argument('--kfac-name', type=str, default='inverse',
                         help='choices: %s' % kfac.kfac_mappers.keys() + ', default: '+'inverse')
@@ -275,7 +275,8 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, criterion, trai
             pseudo_labels = generate_pseudo_labels(output)
             pseudo_loss = criterion(output, pseudo_labels)
             pseudo_loss.backward(retain_graph=True) # backward and save m_g (F1mc)
-            optimizer.synchronize()
+            if args.horovod:
+                optimizer.synchronize()
             optimizer.zero_grad()                   # zero pseudo gradients
 
         loss = criterion(output, target)
