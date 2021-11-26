@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# usage: ngpu_per_node=$ngpu_per_node node_count=$node_count node_rank=$node_rank script=$script bash kill_torch.sh
+# usage: node_count=$node_count node_rank=$node_rank script=$script bash kill_torch.sh
 
 # python script
 script="${script:-python}"
-echo "kill script: $script"
+echo "kill remote process: $script"
 
 # cluster settings
 total_host=16

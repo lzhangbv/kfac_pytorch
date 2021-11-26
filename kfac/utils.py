@@ -9,8 +9,8 @@ TENSOR_CORE=False
 TENSOR_CORE_THRES=1024 #2048*1024
 
 
-def mat_inv(x, method="default"):
-    if method == "default":
+def mat_inv(x, method="linalg"):
+    if method == "linalg":
         return torch.linalg.inv(x).contiguous()
     elif method == "cholesky":
         u = torch.linalg.cholesky(x)
@@ -20,8 +20,8 @@ def mat_inv(x, method="default"):
     else:
         raise NotImplementedError
 
-def mat_eig(x, method="default"):
-    if method == "default":
+def mat_eig(x, method="linalg"):
+    if method == "linalg":
         eigen_val, eigen_vec = torch.linalg.eigh(x)
         return eigen_val, eigen_vec.contiguous()
     elif method == "tcmm": # to be fixed, CUDA error: invalid configuration argument (in pytorch1.8)
