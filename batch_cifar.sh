@@ -23,7 +23,7 @@ kfac_name=eigen
 #kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs base_lr=$base_lr damping=$damping bash train_cifar10.sh
 
 kfac_name=inverse_dp
-#kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs base_lr=$base_lr damping=$damping bash train_cifar10.sh
+kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs base_lr=$base_lr damping=$damping bash train_cifar10.sh
 
 kfac_name=eigen_dp
 #kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs base_lr=$base_lr damping=$damping bash train_cifar10.sh
@@ -32,7 +32,7 @@ kfac_name=inverse_dp_block
 #kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs base_lr=$base_lr damping=$damping bash train_cifar10.sh
 
 kfac_name=inverse_kaisa
-kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs base_lr=$base_lr damping=$damping bash train_cifar10.sh
+#kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs base_lr=$base_lr damping=$damping bash train_cifar10.sh
 
 kfac_name=inverse_dp_hybrid
 #kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs base_lr=$base_lr damping=$damping bash train_cifar10.sh

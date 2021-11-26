@@ -9,22 +9,22 @@ TENSOR_CORE=False
 TENSOR_CORE_THRES=1024 #2048*1024
 
 
-def mat_inv(x, method="linalg"):
-    if method == "linalg":
+def mat_inv(x, method="cholesky"):
+    if method == "inv":
         return torch.linalg.inv(x).contiguous()
     elif method == "cholesky":
         u = torch.linalg.cholesky(x)
         return torch.cholesky_inverse(u).contiguous()
-    elif method == "torchsso": # to be fixed, CUDA error: invalid configuration argument (in pytorch1.8)
+    elif method == "torchsso": # cuSOLVER based inverse package
         return torchsso.utils.inv(x)
     else:
         raise NotImplementedError
 
-def mat_eig(x, method="linalg"):
-    if method == "linalg":
+def mat_eig(x, method="eigh"):
+    if method == "eigh":
         eigen_val, eigen_vec = torch.linalg.eigh(x)
         return eigen_val, eigen_vec.contiguous()
-    elif method == "tcmm": # to be fixed, CUDA error: invalid configuration argument (in pytorch1.8)
+    elif method == "tcmm": # cuSOLVER based sym-eig package
         eigen_val, eigen_vec = tcmm.f_symeig(x)
         return eigen_val, eigen_vec.transpose(-2, -1).contiguous()
     else:
