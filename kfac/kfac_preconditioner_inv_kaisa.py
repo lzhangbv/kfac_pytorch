@@ -75,7 +75,7 @@ class KFAC(KFAC_INV):
         inter_node_group = [j * self.ngpu_per_node + gpu for j in range(nnode)]
         return inter_node_group
 
-    def init_comm_group(self):
+    def init_comm_group(self): #to be fixed: build each group once
         for rank in range(backend.comm.size()):
             intra_node_group = self.get_intra_node_group(rank)
             self.intra_node_groups.append(backend.comm.new_group(intra_node_group))

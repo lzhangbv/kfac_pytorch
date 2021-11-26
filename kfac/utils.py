@@ -2,8 +2,8 @@ import itertools
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchsso
-import tcmm
+#import torchsso
+#import tcmm
 
 TENSOR_CORE=False
 TENSOR_CORE_THRES=1024 #2048*1024

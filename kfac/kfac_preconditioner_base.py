@@ -139,8 +139,8 @@ class KFAC(optim.Optimizer):
                     continue # exclude the pre-softmax linear layer in the Transformer model
                 self.modules.append(module)
                 module.register_forward_pre_hook(self._forward_hook_event)
-                module.register_backward_hook(self._backward_hook_event)  # used in pytorch1.4
-                #module.register_full_backward_hook(self._backward_hook_event)   # to be fixed: the hook seems not fired at some module when its grad_input is None, e.g. the first conv2d
+                #module.register_backward_hook(self._backward_hook_event)  # used in pytorch1.4, and pytorch1.8 (full_backward_hook is not fired when its grad_input is None)
+                module.register_full_backward_hook(self._backward_hook_event)  # used in pytorch1.10
                 module_name = 'module_name_%s_%d' % (classname, name_idx)
                 self.module_names.append(module_name)
                 name_idx += 1

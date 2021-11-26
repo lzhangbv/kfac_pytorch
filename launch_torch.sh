@@ -4,6 +4,7 @@
 
 # python env and script
 PY=/home/esetstore/pytorch1.8/bin/python
+PY=/home/esetstore/pytorch1.10/bin/python
 directory=`pwd`
 script="${script:-}"
 params="${params:-}"
