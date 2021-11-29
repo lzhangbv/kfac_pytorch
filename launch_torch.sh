@@ -3,7 +3,7 @@
 # usage: ngpu_per_node=$ngpu_per_node node_count=$node_count node_rank=$node_rank script=$script params=$params bash launch_torch.sh
 
 # python env and script
-PY=/home/esetstore/pytorch1.8/bin/python
+#PY=/home/esetstore/pytorch1.8/bin/python
 PY=/home/esetstore/pytorch1.10/bin/python
 directory=`pwd`
 script="${script:-}"
@@ -31,7 +31,8 @@ i=0
 while [ $i -lt $node_count ]
 do
     host=${hosts[$node_rank]}
-    args="$PY -m torch.distributed.launch --nproc_per_node=$ngpu_per_node --nnodes=$node_count --node_rank=$i --master_addr=$master_host $script $params"
+    #args="$PY -m torch.distributed.launch --nproc_per_node=$ngpu_per_node --nnodes=$node_count --node_rank=$i --master_addr=$master_host $script $params" #deprecated in pytorch1.10.0
+    args="$PY -m torch.distributed.run --nproc_per_node=$ngpu_per_node --nnodes=$node_count --node_rank=$i --master_addr=$master_host $script $params"
     echo "$host: $args"
     cmd="cd $directory; $args"
     if [ $(expr $i + 1) -eq $node_count ]; then

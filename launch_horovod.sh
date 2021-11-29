@@ -4,7 +4,7 @@
 
 # mpi/python env and script
 MPIPATH=/home/esetstore/.local/openmpi-4.0.1
-PY=/home/esetstore/pytorch1.8/bin/python
+#PY=/home/esetstore/pytorch1.8/bin/python
 PY=/home/esetstore/pytorch1.10/bin/python
 script="${script:-}"
 params="${params:-}"

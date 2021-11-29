@@ -120,7 +120,7 @@ class _TorchBackend:
 
     def local_rank(self):
         try:
-            return os.environ['LOCAL_RANK']
+            return int(os.environ['LOCAL_RANK'])
         except:
             raise RuntimeError('LOCAL_RANK must be set in the environment when using torch.distributed')
 

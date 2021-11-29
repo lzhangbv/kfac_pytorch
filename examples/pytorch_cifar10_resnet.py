@@ -91,11 +91,12 @@ def initialize():
     parser.add_argument('--fp16-allreduce', action='store_true', default=False,
                         help='use fp16 compression during allreduce')
     
-    # Set automatically by torch distributed launch
+    # local_rank: (1) parse argument as folows in torch.distributed.launch; (2) read from environment in torch.distributed.run, i.e. local_rank=int(os.environ['LOCAL_RANK'])
     parser.add_argument('--local_rank', type=int, default=0,
                         help='local rank for distributed training')
 
     args = parser.parse_args()
+
 
     # Training Settings
     args.cuda = not args.no_cuda and torch.cuda.is_available()
@@ -104,16 +105,16 @@ def initialize():
     # Comm backend init
     # args.horovod = False
     if args.horovod:
-        if args.kfac_name == "inverse_kaisa":
+        if args.kfac_name in ["inverse_kaisa", "inverse_hybrid"]:
             hvd.init(process_sets="dynamic")
         else:
             hvd.init()
         backend.init("Horovod")
-        args.local_rank = backend.comm.local_rank()
     else:
         dist.init_process_group(backend='nccl', init_method='env://')
         backend.init("Torch")
-
+    
+    args.local_rank = backend.comm.local_rank()
     logger.info("GPU %s out of %s GPUs", backend.comm.rank(), backend.comm.size())
 
     torch.manual_seed(args.seed)
