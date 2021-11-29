@@ -17,12 +17,6 @@ def test_allgather():
     print('rank: ', rank, ', tensor: ', tensor)
 
 def test_process_set():
-    #hvd.init()
-    
-    #even_set = hvd.ProcessSet([0,2])
-    #odd_set = hvd.ProcessSet([1,3])
-    #hvd.init(process_sets=[even_set, odd_set])
-    
     hvd.init(process_sets="dynamic")
     even_set = hvd.add_process_set([0,2])
     odd_set = hvd.add_process_set([1,3])
@@ -30,17 +24,14 @@ def test_process_set():
     torch.cuda.set_device(hvd.local_rank())
     tensor = torch.rand(10).float().cuda() 
 
-    #for p in [hvd.global_process_set, even_set, odd_set]:
-    #    print(p)
+    for p in [hvd.global_process_set, even_set, odd_set]:
+        print(p)
 
-    #handle = hvd.allreduce_async_(tensor)
-    #hvd.synchronize(handle)
 
     if hvd.rank() in [0, 2]:
         hvd.allreduce_(tensor, process_set=even_set)
     if hvd.rank() in [1, 3]:
         hvd.allreduce_(tensor, process_set=odd_set)
-    
     print(tensor)
 
 def test_torch_ddp():

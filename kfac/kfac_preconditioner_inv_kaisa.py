@@ -38,7 +38,7 @@ class KFAC(KFAC_INV):
                  damping=0.001,
                  fac_update_freq=1,
                  kfac_update_freq=1,
-                 ngpu_per_node=2,
+                 ngpu_per_node=4,
                  kl_clip=0.001,
                  factor_decay=0.95,
                  exclude_vocabulary_size=None,

@@ -96,8 +96,8 @@ class KFAC(KFAC_BASE):
         handles = []
         
         for m in self.modules:
-            handles.append(backend.comm.allreduce_async_(self.m_A[m].data, op=backend.comm.Average))
-            handles.append(backend.comm.allreduce_async_(self.m_G[m].data, op=backend.comm.Average))
+            handles.append(backend.comm.allreduce_async_(self.m_A[m], op=backend.comm.Average))
+            handles.append(backend.comm.allreduce_async_(self.m_G[m], op=backend.comm.Average))
         
         for handle in handles:
             backend.comm.synchronize(handle)
