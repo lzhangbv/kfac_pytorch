@@ -38,7 +38,7 @@ class KFAC(KFAC_INV):
                  damping=0.001,
                  fac_update_freq=1,
                  kfac_update_freq=1,
-                 ngpu_per_node=4,
+                 ngpu_per_node=2,
                  kl_clip=0.001,
                  factor_decay=0.95,
                  exclude_vocabulary_size=None,
@@ -75,13 +75,29 @@ class KFAC(KFAC_INV):
         inter_node_group = [j * self.ngpu_per_node + gpu for j in range(nnode)]
         return inter_node_group
 
-    def init_comm_group(self): #to be fixed: build each group once
-        for rank in range(backend.comm.size()):
-            intra_node_group = self.get_intra_node_group(rank)
-            self.intra_node_groups.append(backend.comm.new_group(intra_node_group))
-            
-            inter_node_group = self.get_inter_node_group(rank)
-            self.inter_node_groups.append(backend.comm.new_group(inter_node_group))
+    def init_comm_group(self):
+        if backend.comm.size() == 1:
+            pass
+        elif backend.comm.size() == self.ngpu_per_node: # intra_comm only
+            self.intra_node_groups = [None] * backend.comm.size() # `None` group refers to comm_world
+        elif self.ngpu_per_node == 1:   # inter_comm only
+            self.inter_node_groups = [None] * backend.comm.size()
+        else:
+            for rank in range(backend.comm.size()):
+                node = rank // self.ngpu_per_node  # node id
+                gpu = rank % self.ngpu_per_node  # gpu id
+
+                if node == 0: # build inter-node group once
+                    inter_node_group = self.get_inter_node_group(rank)
+                    self.inter_node_groups.append(backend.comm.new_group(inter_node_group))
+                else:
+                    self.inter_node_groups.append(self.inter_node_groups[gpu])
+
+                if gpu == 0: # build intra-node group once
+                    intra_node_group = self.get_intra_node_group(rank)
+                    self.intra_node_groups.append(backend.comm.new_group(intra_node_group))
+                else:
+                    self.intra_node_groups.append(self.intra_node_groups[-1])
 
 
     ### Compute Inverse KFs distributively

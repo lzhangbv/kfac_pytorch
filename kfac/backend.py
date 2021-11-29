@@ -81,22 +81,22 @@ class _HorovodBackend:
 
     def allreduce_(self, tensor, name=None, op=Ops.Average):
         op = self._get_op(op)
-        hvd.allreduce_(tensor, name=name, op=op)
+        hvd.allreduce_(tensor, name=name, op=op) # in-place synchronous all-reduce
 
     def allreduce_async_(self, tensor, name=None, op=Ops.Average):
         op = self._get_op(op)
-        return hvd.allreduce_async_(tensor, name=name, op=op)
+        return hvd.allreduce_async_(tensor, name=name, op=op) # in-place asynchronous all-reduce
 
     def broadcast(self, tensor, src, group=None, name=None):
         self.broadcast_(tensor, src, group, name)
     
     def broadcast_(self, tensor, src, group=None, name=None):
         if group is None:
-            hvd.broadcast_(tensor, root_rank=src, name=name)
+            hvd.broadcast_(tensor, root_rank=src, name=name) # in-place synchronous broadcast
         else:
             hvd.broadcast_(tensor, root_rank=src, process_set=group, name=name)
     
-    def broadcast_async_(self, tensor, src, group=None, name=None):
+    def broadcast_async_(self, tensor, src, group=None, name=None): # in-place asynchronous broadcast
         if group is None:
             return hvd.broadcast_async_(tensor, root_rank=src, name=name)
         else:

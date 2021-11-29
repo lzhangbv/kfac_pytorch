@@ -105,7 +105,7 @@ def initialize():
     # Comm backend init
     # args.horovod = False
     if args.horovod:
-        if args.kfac_name in ["inverse_kaisa", "inverse_hybrid"]:
+        if args.kfac_name in ["inverse_kaisa", "inverse_dp_hybrid"]:
             hvd.init(process_sets="dynamic")
         else:
             hvd.init()
