@@ -1,33 +1,20 @@
-#kfac_name=eigen
-kfac_name=inverse
+horovod=0
+nworkers=8
+rdma=1
+node_rank=1
+node_count=2
 
 dnn=resnet50
 batch_size=32
-nworkers=64
+epochs=1
 
-# sgd
-#epochs=1 kfac_name=$kfac_name kfac=0 dnn=$dnn nworkers=1 rdma=1 batch_size=$batch_size ./train_imagenet.sh
+kfac_name=inverse
+kfac=1
+fac=1
 
 # s-sgd
-#epochs=1 kfac_name=$kfac_name kfac=0 dnn=$dnn nworkers=$nworkers rdma=1 batch_size=$batch_size ./train_imagenet.sh
-
-# kfac
-#epochs=1 kfac_name=$kfac_name kfac=1 dnn=$dnn nworkers=1 rdma=1 batch_size=$batch_size ./train_imagenet.sh
-
-exclude_parts=CommunicateInverse,ComputeInverse
-#epochs=1 exclude_parts=$exclude_parts kfac_name=$kfac_name kfac=1 dnn=$dnn nworkers=1 rdma=1 batch_size=$batch_size ./train_imagenet.sh
+kfac=0 horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count batch_size=$batch_size epochs=$epochs ./train_imagenet.sh
 
 # mpd-kfac
-epochs=1 kfac_name=$kfac_name kfac=1 dnn=$dnn nworkers=$nworkers rdma=1 batch_size=$batch_size ./train_imagenet.sh
+kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count batch_size=$batch_size epochs=$epochs ./train_imagenet.sh
 
-exclude_parts=CommunicateInverse
-#epochs=1 exclude_parts=$exclude_parts kfac_name=$kfac_name kfac=1 dnn=$dnn nworkers=$nworkers rdma=1 batch_size=$batch_size ./train_imagenet.sh
-
-exclude_parts=CommunicateInverse,ComputeInverse
-#epochs=1 exclude_parts=$exclude_parts kfac_name=$kfac_name kfac=1 dnn=$dnn nworkers=$nworkers rdma=1 batch_size=$batch_size ./train_imagenet.sh
-
-exclude_parts=CommunicateInverse,ComputeInverse,CommunicateFactor
-#epochs=1 exclude_parts=$exclude_parts kfac_name=$kfac_name kfac=1 dnn=$dnn nworkers=$nworkers rdma=1 batch_size=$batch_size ./train_imagenet.sh
-
-exclude_parts=CommunicateInverse,ComputeInverse,CommunicateFactor,ComputeFactor
-#epochs=1 exclude_parts=$exclude_parts kfac_name=$kfac_name kfac=1 dnn=$dnn nworkers=$nworkers rdma=1 batch_size=$batch_size ./train_imagenet.sh

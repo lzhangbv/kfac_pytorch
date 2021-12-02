@@ -27,6 +27,7 @@ import torch.utils.data.distributed
 from torch.optim.lr_scheduler import LambdaLR
 from torchvision import datasets, transforms
 import horovod.torch as hvd
+import torch.distributed as dist
 from tqdm import tqdm
 from distutils.version import LooseVersion
 import imagenet_resnet as models
@@ -43,6 +44,8 @@ def initialize():
     # Training settings
     parser = argparse.ArgumentParser(description='PyTorch ImageNet Example',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('--horovod', type=int, default=1, metavar='N',
+                        help='whether use horovod as communication backend (default: 1)')
     parser.add_argument('--train-dir', default='/tmp/imagenet/ILSVRC2012_img_train/',
                         help='path to training data')
     parser.add_argument('--val-dir', default='/tmp/imagenet/ILSVRC2012_img_val/',
@@ -122,21 +125,33 @@ def initialize():
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
 
-    hvd.init()
+    # Comm backend init
+    if args.horovod:
+        if args.kfac_name in ["inverse_kaisa", "inverse_dp_hybrid"]:
+            hvd.init(process_sets="dynamic")
+        else:
+            hvd.init()
+        backend.init("Horovod")
+    else:
+        dist.init_process_group(backend='nccl', init_method='env://')
+        backend.init("Torch")
+
+    args.local_rank = backend.comm.local_rank()
+
     torch.manual_seed(args.seed)
-    args.verbose = 1 if hvd.rank() == 0 else 0
+    args.verbose = 1 if backend.comm.rank() == 0 else 0
     #if args.verbose:
     #    logger.info(args)
 
     if args.cuda:
-        torch.cuda.set_device(hvd.local_rank())
+        torch.cuda.set_device(args.local_rank)
         torch.cuda.manual_seed(args.seed)
 
     cudnn.benchmark = True
 
     args.log_dir = os.path.join(args.log_dir, 
                                 "imagenet_resnet50_kfac{}_gpu_{}_{}".format(
-                                args.kfac_update_freq, hvd.size(),
+                                args.kfac_update_freq, backend.comm.size(),
                                 datetime.now().strftime('%Y-%m-%d_%H-%M-%S')))
     args.checkpoint_format=os.path.join(args.log_dir, args.checkpoint_format)
     #os.makedirs(args.log_dir, exist_ok=True)
@@ -147,13 +162,6 @@ def initialize():
         if os.path.exists(args.checkpoint_format.format(epoch=try_epoch)):
             args.resume_from_epoch = try_epoch
             break
-
-    # Horovod: broadcast resume_from_epoch from rank 0 (which will have
-    # checkpoints) to other ranks.
-    if hvd.size() > 1:
-        args.resume_from_epoch = hvd.broadcast(torch.tensor(args.resume_from_epoch),
-                                           root_rank=0,
-                                           name='resume_from_epoch').item()
 
     # Horovod: write TensorBoard logs on first worker.
     try:
@@ -167,7 +175,7 @@ def initialize():
         args.log_writer = None
 
     #logfile = './logs/timing_imagenet_thres1024_{}_kfac{}_gpu{}_bs{}_{}_ep_{}.log'.format(args.model, args.kfac_update_freq, hvd.size(), args.batch_size, args.kfac_name, args.exclude_parts)
-    logfile = './logs/debug_imagenet_{}_kfac{}_gpu{}_bs{}_{}_ep_{}.log'.format(args.model, args.kfac_update_freq, hvd.size(), args.batch_size, args.kfac_name, args.exclude_parts)
+    logfile = './logs/debug_imagenet_{}_kfac{}_gpu{}_bs{}_{}_ep_{}.log'.format(args.model, args.kfac_update_freq, backend.comm.size(), args.batch_size, args.kfac_name, args.exclude_parts)
     #logfile = './logs/inverse_imagenet_resnet50_kfac{}_gpu{}_bs{}.log'.format(args.kfac_update_freq, hvd.size(), args.batch_size)
     #logfile = './logs/imagenet_resnet50_kfac{}_gpu{}_bs{}.log'.format(args.kfac_update_freq, hvd.size(), args.batch_size)
     #logfile = './logs/sparse_imagenet_resnet50_kfac{}_gpu{}_bs{}.log'.format(args.kfac_update_freq, hvd.size(), args.batch_size)
@@ -208,12 +216,12 @@ def get_datasets(args):
     # Horovod: use DistributedSampler to partition data among workers. Manually specify
     # `num_replicas=hvd.size()` and `rank=hvd.rank()`.
     train_sampler = torch.utils.data.distributed.DistributedSampler(
-            train_dataset, num_replicas=hvd.size(), rank=hvd.rank())
+            train_dataset, num_replicas=backend.comm.size(), rank=backend.comm.rank())
     train_loader = torch.utils.data.DataLoader(
             train_dataset, batch_size=args.batch_size * args.batches_per_allreduce,
             sampler=train_sampler, **kwargs)
     val_sampler = torch.utils.data.distributed.DistributedSampler(
-            val_dataset, num_replicas=hvd.size(), rank=hvd.rank())
+            val_dataset, num_replicas=backend.comm.size(), rank=backend.comm.rank())
     val_loader = torch.utils.data.DataLoader(
             val_dataset, batch_size=args.val_batch_size,
             sampler=val_sampler, **kwargs)
@@ -240,7 +248,7 @@ def get_model(args):
         model.cuda()
 
     # Horovod: scale learning rate by the number of GPUs.
-    args.base_lr = args.base_lr * hvd.size() * args.batches_per_allreduce
+    args.base_lr = args.base_lr * backend.comm.size() * args.batches_per_allreduce
     optimizer = optim.SGD(model.parameters(), lr=args.base_lr,
                           momentum=args.momentum, weight_decay=args.wd)
 
@@ -251,9 +259,10 @@ def get_model(args):
                 damping=args.damping, kl_clip=args.kl_clip,
                 fac_update_freq=args.kfac_cov_update_freq,
                 kfac_update_freq=args.kfac_update_freq,
-                diag_blocks=args.diag_blocks,
-                diag_warmup=args.diag_warmup,
-                distribute_layer_factors=args.distribute_layer_factors, exclude_parts=args.exclude_parts)
+                #diag_blocks=args.diag_blocks,
+                #diag_warmup=args.diag_warmup,
+                #distribute_layer_factors=args.distribute_layer_factors, 
+                exclude_parts=args.exclude_parts)
         kfac_param_scheduler = kfac.KFACParamScheduler(
                 preconditioner,
                 damping_alpha=args.damping_alpha,
@@ -264,28 +273,31 @@ def get_model(args):
     else:
         preconditioner = None
 
-    compression = hvd.Compression.fp16 if args.fp16_allreduce \
-                                       else hvd.Compression.none
-    optimizer = hvd.DistributedOptimizer(
-            optimizer, named_parameters=model.named_parameters(),
-            compression=compression, op=hvd.Average,
-            backward_passes_per_step=args.batches_per_allreduce)
+    if args.horovod:
+        compression = hvd.Compression.fp16 if args.fp16_allreduce else hvd.Compression.none
+        optimizer = hvd.DistributedOptimizer(
+                optimizer, named_parameters=model.named_parameters(),
+                compression=compression, op=hvd.Average,
+                backward_passes_per_step=args.batches_per_allreduce)
+    
+        # Horovod: broadcast parameters & optimizer state.
+        if hvd.size() > 1:
+            hvd.broadcast_parameters(model.state_dict(), root_rank=0)
+            hvd.broadcast_optimizer_state(optimizer, root_rank=0)
+    else:
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank]) 
 
     # Restore from a previous checkpoint, if initial_epoch is specified.
     # Horovod: restore on the first worker which will broadcast weights 
     # to other workers.
-    if args.resume_from_epoch > 0 and hvd.rank() == 0:
+    if args.resume_from_epoch > 0:
         filepath = args.checkpoint_format.format(epoch=args.resume_from_epoch)
         checkpoint = torch.load(filepath)
         model.load_state_dict(checkpoint['model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
 
-    # Horovod: broadcast parameters & optimizer state.
-    if hvd.size() > 1:
-        hvd.broadcast_parameters(model.state_dict(), root_rank=0)
-        hvd.broadcast_optimizer_state(optimizer, root_rank=0)
 
-    lrs = create_lr_schedule(hvd.size(), args.warmup_epochs, args.lr_decay)
+    lrs = create_lr_schedule(backend.comm.size(), args.warmup_epochs, args.lr_decay)
     lr_scheduler = [LambdaLR(optimizer, lrs)]
     if preconditioner is not None:
         lr_scheduler.append(LambdaLR(preconditioner, lrs))
@@ -339,14 +351,18 @@ def train(epoch, model, optimizer, preconditioner, lr_schedules, lrs,
             fwbwtime = time.time()
             fwbwtimes.append(fwbwtime-iotime)
 
-            optimizer.synchronize()
+            if args.horovod:
+                optimizer.synchronize()
             commtime = time.time()
             commtimes.append(commtime-fwbwtime)
             if preconditioner is not None:
                 preconditioner.step(epoch=epoch)
             kfactime = time.time()
             kfactimes.append(kfactime-commtime)
-            with optimizer.skip_synchronize():
+            if args.horovod:
+                with optimizer.skip_synchronize():
+                    optimizer.step()
+            else:
                 optimizer.step()
             updatetime=time.time()
             uptimes.append(updatetime-kfactime)

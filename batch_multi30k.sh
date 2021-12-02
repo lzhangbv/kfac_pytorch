@@ -1,4 +1,4 @@
-horovod=1
+horovod=0
 nworkers=8
 rdma=1
 node_rank=1
