@@ -14,7 +14,7 @@ fi
 
 kfac="${kfac:-1}"
 fac="${fac:-1}"
-kfac_name="${kfac_name:-inverse}"
+kfac_name="${kfac_name:-inverse_dp}"
 exclude_parts="${exclude_parts:-''}"
 stat_decay="${stat_decay:-0.95}"
 damping="${damping:-0.003}"

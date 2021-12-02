@@ -1,7 +1,7 @@
 from __future__ import print_function
 
 import time
-import dill as pickle
+import dill as pickle # dill==0.3.3
 import itertools
 from datetime import datetime, timedelta
 import argparse
@@ -29,13 +29,15 @@ import torch.optim as optim
 import torch.utils.data.distributed
 from torch.optim.lr_scheduler import LambdaLR
 from torchvision import datasets, transforms
+
 import horovod.torch as hvd
+import torch.distributed as dist
 from tqdm import tqdm
 from distutils.version import LooseVersion
 import imagenet_resnet as models
 from utils import *
 
-# torchtext and transformer
+# torchtext==0.6.0 and transformer
 from torchtext.data import Field, Dataset, BucketIterator
 from torchtext.data.metrics import bleu_score
 import transformer.Constants as Constants
@@ -56,6 +58,7 @@ def initialize():
 
     parser.add_argument('--epoch', type=int, default=200)
     parser.add_argument('--batch-size', type=int, default=256)
+    parser.add_argument('--horovod', type=int, default=1) # whether use horovod as backend
 
     parser.add_argument('--d-model', type=int, default=512)
     parser.add_argument('--d-inner-hid', type=int, default=2048)
@@ -133,20 +136,32 @@ def initialize():
     
     args.cuda = not args.no_cuda and torch.cuda.is_available()
 
-    hvd.init()
+    # comm backend init
+    if args.horovod:
+        if args.kfac_name in ["inverse_kaisai", "inverse_dp_hybrid"]:
+            hvd.init(process_sets="dynamic")
+        else:
+            hvd.init()
+        backend.init("Horovod")
+    else:
+        dist.init_process_group(backend='nccl', init_method='env://')
+        backend.init("Torch")
+
+    args.local_rank = backend.comm.local_rank()
+    
     torch.manual_seed(args.seed)
-    args.verbose = 1 if hvd.rank() == 0 else 0
+    args.verbose = 1 if backend.comm.rank() == 0 else 0
 
     if args.cuda:
-        torch.cuda.set_device(hvd.local_rank())
+        torch.cuda.set_device(args.local_rank)
         torch.cuda.manual_seed(args.seed)
 
     cudnn.benchmark = True
 
     if args.use_adam:
-        logfile = './logs/debug_multi30k_transformer{}_epoch{}_warmup{}_lr{}_kfac{}_gpu{}_bs{}_{}.log'.format(args.n_layers, args.epoch, args.n_warmup_steps, args.lr_mul, args.kfac_update_freq, hvd.size(), args.batch_size, args.kfac_name)
+        logfile = './logs/debug_multi30k_transformer{}_epoch{}_warmup{}_lr{}_kfac{}_gpu{}_bs{}_{}.log'.format(args.n_layers, args.epoch, args.n_warmup_steps, args.lr_mul, args.kfac_update_freq, backend.comm.size(), args.batch_size, args.kfac_name)
     else:
-        logfile = './logs/debug_multi30k_transformer{}_epoch{}_lr{}_decay{}_kfac{}_gpu{}_bs{}_{}.log'.format(args.n_layers, args.epoch, args.base_lr, args.lr_decay, args.kfac_update_freq, hvd.size(), args.batch_size, args.kfac_name)
+        logfile = './logs/debug_multi30k_transformer{}_epoch{}_lr{}_decay{}_kfac{}_gpu{}_bs{}_{}.log'.format(args.n_layers, args.epoch, args.base_lr, args.lr_decay, args.kfac_update_freq, backend.comm.size(), args.batch_size, args.kfac_name)
     hdlr = logging.FileHandler(logfile)
     hdlr.setFormatter(formatter)
     logger.addHandler(hdlr) 
@@ -197,7 +212,7 @@ def prepare_dataloaders(args):
     return train_iterator, val_iterator, val
 
 def distribute_dataset(train_iterator, rank, size):
-    total_size = math.ceil(len(train_iterator) / hvd.size()) * hvd.size() # make the set evenly divisible
+    total_size = math.ceil(len(train_iterator) / backend.comm.size()) * backend.comm.size() # make the set evenly divisible
     train_set = [next(itertools.cycle(train_iterator)) for _ in range(total_size)]
     # print(len(train_set))
     # print(train_set[0:2])
@@ -252,11 +267,11 @@ def get_model(args):
         if args.use_adam:
             optimizer = optim.Adam(model.parameters(), betas=(0.9, 0.98), eps=1e-09) # use Adam
         else:
-            args.base_lr = args.base_lr * hvd.size() 
+            args.base_lr = args.base_lr * backend.comm.size() 
             optimizer = optim.SGD(model.parameters(), lr=args.base_lr, momentum=args.momentum, weight_decay=args.weight_decay) # use SGD
         preconditioner = None
     else:
-        args.base_lr = args.base_lr * hvd.size()
+        args.base_lr = args.base_lr * backend.comm.size()
         optimizer = optim.SGD(model.parameters(), lr=args.base_lr, momentum=args.momentum, weight_decay=args.weight_decay)
         KFAC = kfac.get_kfac_module(args.kfac_name)
         preconditioner = KFAC(
@@ -277,19 +292,23 @@ def get_model(args):
         #        update_freq_alpha=args.kfac_update_freq_alpha,
         #        update_freq_schedule=args.kfac_update_freq_decay)
 
-    optimizer = hvd.DistributedOptimizer(
-            optimizer, named_parameters=model.named_parameters(),
-            op=hvd.Average)
+    # Distributed Optimizer
+    if args.horovod:
+        optimizer = hvd.DistributedOptimizer(
+                optimizer, named_parameters=model.named_parameters(),
+                op=hvd.Average)
 
-    if hvd.size() > 1:
-        hvd.broadcast_optimizer_state(optimizer, root_rank=0)
-        hvd.broadcast_parameters(model.state_dict(), root_rank=0)
+        if hvd.size() > 1:
+            hvd.broadcast_optimizer_state(optimizer, root_rank=0)
+            hvd.broadcast_parameters(model.state_dict(), root_rank=0)
+    else:
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank])
 
     # Learning Rate Schedule
     if args.use_adam:
         lr_scheduler = LrScheduler(optimizer, args.lr_mul, args.d_model, args.n_warmup_steps)
     else:
-        lrs = create_lr_schedule(hvd.size(), args.warmup_epochs, args.lr_decay, args.lr_decay_alpha)
+        lrs = create_lr_schedule(backend.comm.size(), args.warmup_epochs, args.lr_decay, args.lr_decay_alpha)
         lr_scheduler = LambdaLR(optimizer, lrs)
 
     return model, translator, optimizer, preconditioner, lr_scheduler
@@ -340,7 +359,7 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, train_iterator,
     display = 1
 
     # get train_subset
-    train_subset = distribute_dataset(train_iterator, hvd.rank(), hvd.size())
+    train_subset = distribute_dataset(train_iterator, backend.comm.rank(), backend.comm.size())
     # print(len(train_subset))
     
     for batch_idx, batch in enumerate(train_subset):
@@ -363,21 +382,25 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, train_iterator,
         
         with torch.no_grad():
             train_loss.update(loss)
-            train_total_word.update(n_word)
-            train_correct_word.update(n_correct)
+            train_total_word.update(n_word.float())
+            train_correct_word.update(n_correct.float())
 
         # backward and update parameters
         loss.backward()
         if args.use_adam:
             lr_scheduler.step() # schedule learning rate at each iteration
         
-        optimizer.synchronize()
+        if args.horovod:
+            optimizer.synchronize()
 
         if preconditioner is not None:
             preconditioner.step(epoch=epoch)
 
-        with optimizer.skip_synchronize():
-            optimizer.step()    
+        if args.horovod:
+            with optimizer.skip_synchronize():
+                optimizer.step()    
+        else:
+            optimizer.step()
 
         avg_time += (time.time() - stime)
 
