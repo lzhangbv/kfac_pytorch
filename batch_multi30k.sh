@@ -27,8 +27,8 @@ epochs=50
 base_lr=1e-6
 warmup_epochs=0
 lr_decay="${lr_decay:-200}"
-kfac=10
-fac=10
+kfac=1
+fac=1
 
 #kfac_name=inverse
 #damping=0.01

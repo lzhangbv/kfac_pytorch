@@ -356,7 +356,7 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, train_iterator,
     train_correct_word = Metric('train_correct_word')
     
     avg_time = 0.0
-    display = 1
+    display = 5
 
     # get train_subset
     train_subset = distribute_dataset(train_iterator, backend.comm.rank(), backend.comm.size())
@@ -404,9 +404,9 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, train_iterator,
 
         avg_time += (time.time() - stime)
 
-        # if (batch_idx + 1) % display == 0:
-        #     if args.verbose:
-        #         logger.info("[%d][%d] time: %.3f, speed: %.3f samples/s" % (epoch, batch_idx, avg_time/display, args.batch_size/(avg_time/display)))
+        if (batch_idx + 1) % display == 0:
+            if args.verbose:
+                logger.info("[%d][%d] time: %.3f, speed: %.3f samples/s" % (epoch, batch_idx, avg_time/display, args.batch_size/(avg_time/display)))
 
     if args.verbose:
         logger.info("[%d] epoch train loss: %.4f, acc: %.3f" % (epoch, train_loss.sum.item() / train_total_word.sum.item(), 100 * train_correct_word.sum.item() / train_total_word.sum.item()))

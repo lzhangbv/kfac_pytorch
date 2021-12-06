@@ -7,7 +7,6 @@ import kfac.backend as backend  # hvd -> backend.comm
 
 from kfac.utils import (ComputeA, ComputeG)
 from kfac.utils import update_running_avg
-from kfac.utils import get_block_boundary
 from kfac.utils import mat_inv
 from kfac.kfac_preconditioner_inv import KFAC as KFAC_INV
 
