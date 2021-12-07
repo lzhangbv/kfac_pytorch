@@ -86,10 +86,13 @@ class ComputeA:
             if len(a.shape) > 2:
                 if self.linear_average:
                     a = torch.mean(a, list(range(len(a.shape)))[1:-1])
+                    if layer.bias is not None:
+                        a = torch.cat([a, a.new(a.size(0), 1).fill_(1)], 1)
                 else: # to be checked
                     a = a.view(-1, a.shape[-1])
-            if layer.bias is not None:
-                a = torch.cat([a, a.new(a.size(0), 1).fill_(1)], 1)
+                    if layer.bias is not None:
+                        a = torch.cat([a, a.new(a.size(0), 1).fill_(1)], 1)
+                    batch_size = a.size(0)
             return batch_size, a
         
         elif isinstance(layer, nn.Conv2d):
@@ -131,9 +134,7 @@ class ComputeG:
 
     def __call__(self, g, layer, batch_averaged=True):
         """Return Kronecker Factor G"""
-        batch_size, g = self.get_deviation(g, layer)
-        if batch_averaged:
-            g = g * batch_size
+        batch_size, g = self.get_deviation(g, layer, batch_averaged)
         assert g.shape[-1] == self.get_dimension(g, layer)
 
         if self.use_tensor_core:
@@ -142,6 +143,7 @@ class ComputeG:
             return g.t() @ (g / batch_size)
 
     def get_dimension(self, g, layer):
+        """Return the dimension of KF G"""
         if isinstance(layer, nn.Linear):
             return layer.out_features
         elif isinstance(layer, nn.Conv2d):
@@ -149,26 +151,35 @@ class ComputeG:
         else:
             raise NotImplementedError("KFAC does not support layer: ".format(layer))
 
-    def get_deviation(self, g, layer):
+    def get_deviation(self, g, layer, batch_averaged=True):
+        """Return the batch size and deviation w.r.t. the pre-activation output, shape: _ * dim"""
         if isinstance(layer, nn.Linear):
             batch_size = g.size(0)
+            if batch_averaged:
+                g = g * batch_size
+            
             if len(g.shape) > 2: 
-                assert len(g.shape) == 3 # batch_size * seq_len * dim
+                assert len(g.shape) == 3    # batch_size * seq_len * dim
                 if self.linear_average:
                     g = torch.mean(g, 1)
-                else:
-                    g = g.view(-1, g.size(-1))
+                else: # to be checked
+                    g = g.reshape(-1, g.size(-1))
+                    batch_size = g.size(0)
             return batch_size, g
         
         elif isinstance(layer, nn.Conv2d):
             batch_size = g.size(0)
-            spatial_size = g.size(2) * g.size(3)
+            if batch_averaged:
+                g = g * batch_size
             
-            g = g.transpose(1, 2).transpose(2, 3)
-            g = g.contiguous()
-            g = g.view(-1, g.size(-1))
-
-            g = g * spatial_size
+            spatial_size = g.size(2) * g.size(3)    # batch_size * n_filters * out_h * out_w
+            if self.conv2d_average:
+                g = torch.mean(g, [2, 3])
+            else:
+                g = g.transpose(1, 2).transpose(2, 3)
+                g = g.reshape(-1, g.size(-1))
+                batch_size = g.size(0)
+                g = g * spatial_size
             return batch_size, g
 
         else:

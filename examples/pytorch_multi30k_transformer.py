@@ -404,7 +404,8 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, train_iterator,
 
         avg_time += (time.time() - stime)
 
-        if (batch_idx + 1) % display == 0:
+        if False:
+        #if (batch_idx + 1) % display == 0:
             if args.verbose:
                 logger.info("[%d][%d] time: %.3f, speed: %.3f samples/s" % (epoch, batch_idx, avg_time/display, args.batch_size/(avg_time/display)))
 
