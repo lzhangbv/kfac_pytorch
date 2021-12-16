@@ -223,6 +223,9 @@ class KFAC(optim.Optimizer):
         self._update_grad_in_place()
         self.steps += 1
 
+        # clear the temporal memory iteratively
+        self.m_a, self.m_g = {}, {}
+
 
 class KFACParamScheduler():
     """Updates KFAC hyper-parameters at each epoch

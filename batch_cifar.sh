@@ -1,5 +1,5 @@
-horovod=1
-nworkers=4
+horovod=0
+nworkers=8
 rdma=1
 node_rank=1
 node_count=2
@@ -13,17 +13,17 @@ damping=0.003
 # s-sgd
 #kfac=0 horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs base_lr=$base_lr damping=$damping bash train_cifar10.sh
 
-fac=10
-kfac=10
+fac=1
+kfac=1
 
 kfac_name=inverse
-#kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs base_lr=$base_lr damping=$damping bash train_cifar10.sh
+kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs base_lr=$base_lr damping=$damping bash train_cifar10.sh
 
 kfac_name=eigen
 #kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs base_lr=$base_lr damping=$damping bash train_cifar10.sh
 
 kfac_name=inverse_dp
-kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs base_lr=$base_lr damping=$damping bash train_cifar10.sh
+#kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs base_lr=$base_lr damping=$damping bash train_cifar10.sh
 
 kfac_name=eigen_dp
 #kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs base_lr=$base_lr damping=$damping bash train_cifar10.sh

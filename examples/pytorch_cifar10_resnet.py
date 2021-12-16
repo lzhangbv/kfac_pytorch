@@ -267,9 +267,6 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, criterion, trai
         iotimes.append(iotime-stime)
 
         output = model(data)
-        if args.verbose:
-            logger.info("after FF, batch id: %s, gpu memory allocated (MB): %.2f", batch_idx, torch.cuda.memory_allocated() / 1024 / 1024)
-        
         loss = criterion(output, target)
         with torch.no_grad():
             train_loss.update(loss)
@@ -288,8 +285,6 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, criterion, trai
         if args.use_kfac:
             preconditioner.step(epoch=epoch)
             
-        if args.verbose:
-            logger.info("after BP, batch id: %s, gpu memory allocated (MB): %.2f", batch_idx, torch.cuda.memory_allocated() / 1024 / 1024)
         kfactime = time.time()
         kfactimes.append(kfactime-commtime)
     

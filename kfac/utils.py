@@ -63,8 +63,9 @@ def update_running_avg(new, current, alpha):
     current *= (1 - alpha)
 
 
-class ComputeA:
-
+""""old KF_comp implementations only used for debug"""
+class _ComputeA:
+    
     @classmethod
     def __call__(cls, a, layer):
         if isinstance(layer, nn.Linear):
@@ -96,8 +97,8 @@ class ComputeA:
         return a.t() @ (a / batch_size)
 
 
-class ComputeG:
-
+class _ComputeG:
+    
     @classmethod
     def __call__(cls, g, layer, batch_averaged):
         if isinstance(layer, nn.Conv2d):
@@ -133,7 +134,7 @@ class ComputeG:
         return cov_g
 
 
-class ComputeA_to_be_fixed:
+class ComputeA:
     def __init__(self, linear_average=True, conv2d_average=False, use_tensor_core=False):
         self.linear_average = linear_average
         self.conv2d_average = conv2d_average
@@ -194,7 +195,7 @@ class ComputeA_to_be_fixed:
         return dim_A
 
 
-class ComputeG_to_be_fixed:
+class ComputeG:
     def __init__(self, linear_average=True, conv2d_average=False, use_tensor_core=False):
         self.linear_average = linear_average
         self.conv2d_average = conv2d_average
