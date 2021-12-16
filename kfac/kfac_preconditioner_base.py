@@ -152,7 +152,6 @@ class KFAC(optim.Optimizer):
         raise NotImplementedError
 
     ### KFs computations and communications
-    @torch.no_grad()
     def _compute_factors(self):
         """Compute KFs."""
         raise NotImplementedError
@@ -161,7 +160,6 @@ class KFAC(optim.Optimizer):
         """Communicate KFs."""
         raise NotImplementedError
 
-    @torch.no_grad()
     def _compute_inverse(self):
         """Compute inverse KFs."""
         raise NotImplementedError
@@ -170,7 +168,6 @@ class KFAC(optim.Optimizer):
         """Communicate inverse KFs."""
         raise NotImplementedError
 
-    @torch.no_grad()
     def _compute_pred(self):
         """Compute preconditioned gradients."""
         raise NotImplementedError
@@ -179,13 +176,11 @@ class KFAC(optim.Optimizer):
         """Communicate preconditioned gradients."""
         raise NotImplementedError
 
-    @torch.no_grad()
     def _update_grad_in_place(self):
         """Update preconditioned gradients in place."""
         raise NotImplementedError
     
     ### Perform one K-FAC step
-    @torch.no_grad()
     def step(self, closure=None, epoch=None):
         """Perform one K-FAC step"""
 
