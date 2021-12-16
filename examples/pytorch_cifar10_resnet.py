@@ -27,7 +27,6 @@ import torch.multiprocessing as mp
 import cifar_resnet as resnet
 from utils import *
 
-
 import kfac
 import kfac.backend as backend #don't use a `from` import
 
@@ -267,28 +266,15 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, criterion, trai
         iotime = time.time()
         iotimes.append(iotime-stime)
 
-        if args.use_kfac:
-            preconditioner.set_hook_enabled(True)    # forward and save m_a
-        
         output = model(data)
-
-        if args.use_kfac and args.kfac_type == 'F1mc':
-            pseudo_labels = generate_pseudo_labels(output)
-            pseudo_loss = criterion(output, pseudo_labels)
-            pseudo_loss.backward(retain_graph=True) # backward and save m_g (F1mc)
-            if args.horovod:
-                optimizer.synchronize()
-            optimizer.zero_grad()                   # zero pseudo gradients
-
+        
         loss = criterion(output, target)
         with torch.no_grad():
             train_loss.update(loss)
             train_accuracy.update(accuracy(output, target))
 
-        if args.use_kfac and args.kfac_type == 'F1mc':
-            preconditioner.set_hook_enabled(False)   # backward and no hook (F1mc), but save m_g (Femp)
-        
         loss.backward()
+
         fwbwtime = time.time()
         fwbwtimes.append(fwbwtime-iotime)
 
@@ -299,6 +285,8 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, criterion, trai
         
         if args.use_kfac:
             preconditioner.step(epoch=epoch)
+            if args.verbose:
+                logger.info("batch id: %s, gpu memory allocated (MB): %.2f", batch_idx, torch.cuda.memory_allocated() / 1024 / 1024)
         kfactime = time.time()
         kfactimes.append(kfactime-commtime)
     
@@ -313,15 +301,15 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, criterion, trai
         avg_time += (time.time()-stime)
             
         if (batch_idx + 1) % display == 0:
-            #if False:
-            if args.verbose:
+            if False:
+            #if args.verbose:
                 logger.info("[%d][%d] time: %.3f, speed: %.3f images/s" % (epoch, batch_idx, avg_time/display, args.batch_size/(avg_time/display)))
                 logger.info('Profiling: IO: %.3f, FW+BW: %.3f, COMM: %.3f, KFAC: %.3f, UPDAT: %.3f', np.mean(iotimes), np.mean(fwbwtimes), np.mean(commtimes), np.mean(kfactimes), np.mean(uptimes))
             iotimes=[];fwbwtimes=[];kfactimes=[];commtimes=[];uptimes=[]
             avg_time = 0.0
 
-        if batch_idx >= 60:
-            break
+        #if batch_idx >= 60:
+        #    break
 
     if args.verbose:
         logger.info("[%d] epoch train loss: %.4f, acc: %.3f" % (epoch, train_loss.avg.item(), 100*train_accuracy.avg.item()))

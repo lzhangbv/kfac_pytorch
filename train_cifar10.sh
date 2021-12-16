@@ -6,8 +6,8 @@ batch_size="${batch_size:-50}"
 base_lr="${base_lr:-0.1}"
 epochs="${epochs:-1}"
 
-if [ "$epochs" = "50" ]; then
-lr_decay="${lr_decay:-20 35 45}"
+if [ "$epochs" = "200" ]; then
+lr_decay="${lr_decay:-100 150}"
 else
 lr_decay="${lr_decay:-35 75 90}"
 fi

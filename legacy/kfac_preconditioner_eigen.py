@@ -4,12 +4,12 @@ import torch.optim as optim
 import horovod.torch as hvd
 from horovod.torch.mpi_ops import allgather_async
 
-from kfac.utils import (ComputeA, ComputeG)
-from kfac.utils import update_running_avg
-from kfac.utils import try_contiguous
-from kfac.utils import cycle
-from kfac.utils import get_block_boundary
-from kfac.utils import sparsification
+from legacy.utils import (ComputeA, ComputeG)
+from legacy.utils import update_running_avg
+from legacy.utils import try_contiguous
+from legacy.utils import cycle
+from legacy.utils import get_block_boundary
+from legacy.utils import sparsification
 import logging
 import tcmm
 

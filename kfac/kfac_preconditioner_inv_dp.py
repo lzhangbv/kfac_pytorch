@@ -72,6 +72,7 @@ class KFAC(KFAC_INV):
                 self.m_g[module] = grad_output[0].data
 
     ### Compute KFs distributively
+    @torch.no_grad()
     def _compute_factors(self):
         """Compute As and Gs distributively"""
         for module in self.modules:
@@ -95,6 +96,7 @@ class KFAC(KFAC_INV):
         pass
 
     ### Compute Inverse KFs distributively
+    @torch.no_grad()
     def _compute_inverse(self):
         """Compute inverse factors distributively"""
         for module in self.modules:
@@ -114,6 +116,7 @@ class KFAC(KFAC_INV):
                 self.m_inv_G[module] = mat_inv(G)
 
     ### Compute Preconditioned Gradients distributively
+    @torch.no_grad()
     def _compute_pred(self):
         """Compute the preconditioned gradients distributively"""
         assert not self.communicate_inverse_or_not # force to comm_pred

@@ -64,6 +64,76 @@ def update_running_avg(new, current, alpha):
 
 
 class ComputeA:
+
+    @classmethod
+    def __call__(cls, a, layer):
+        if isinstance(layer, nn.Linear):
+            cov_a = cls.linear(a, layer)
+        elif isinstance(layer, nn.Conv2d):
+            cov_a = cls.conv2d(a, layer)
+        else:
+            raise NotImplementedError("KFAC does not support layer: ".format(layer))
+        return cov_a
+
+    @staticmethod
+    def conv2d(a, layer):
+        batch_size = a.size(0)
+        a = _extract_patches(a, layer.kernel_size, layer.stride, layer.padding)
+        spatial_size = a.size(1) * a.size(2)
+        a = a.view(-1, a.size(-1))
+        if layer.bias is not None:
+            a = torch.cat([a, a.new(a.size(0), 1).fill_(1)], 1)
+        a = a.div_(spatial_size)
+        return a.t() @ (a / batch_size) 
+
+    @staticmethod
+    def linear(a, layer):
+        if len(a.shape) > 2:
+            a = torch.mean(a, 1)         # average dim of num_word
+        batch_size = a.size(0)
+        if layer.bias is not None:
+            a = torch.cat([a, a.new(a.size(0), 1).fill_(1)], 1)
+        return a.t() @ (a / batch_size)
+
+
+class ComputeG:
+
+    @classmethod
+    def __call__(cls, g, layer, batch_averaged):
+        if isinstance(layer, nn.Conv2d):
+            cov_g = cls.conv2d(g, layer, batch_averaged)
+        elif isinstance(layer, nn.Linear):
+            cov_g = cls.linear(g, layer, batch_averaged)
+        else:
+            raise NotImplementedError("KFAC does not support layer: ".format(layer))
+        return cov_g
+
+    @staticmethod
+    def conv2d(g, layer, batch_averaged):
+        spatial_size = g.size(2) * g.size(3)
+        batch_size = g.shape[0]
+        g = g.transpose(1, 2).transpose(2, 3)
+        g = g.reshape(-1, g.size(-1))
+
+        if batch_averaged:
+            g = g * batch_size
+        g = g * spatial_size
+        cov_g = g.t() @ (g / g.size(0))
+        return cov_g
+
+    @staticmethod
+    def linear(g, layer, batch_averaged):
+        if len(g.shape) > 2:
+            g = torch.mean(g, 1)
+        batch_size = g.size(0)
+        if batch_averaged:
+            cov_g = g.t() @ (g * batch_size)
+        else:
+            cov_g = g.t() @ (g / batch_size)
+        return cov_g
+
+
+class ComputeA_to_be_fixed:
     def __init__(self, linear_average=True, conv2d_average=False, use_tensor_core=False):
         self.linear_average = linear_average
         self.conv2d_average = conv2d_average
@@ -86,13 +156,11 @@ class ComputeA:
             if len(a.shape) > 2:
                 if self.linear_average:
                     a = torch.mean(a, list(range(len(a.shape)))[1:-1])
-                    if layer.bias is not None:
-                        a = torch.cat([a, a.new(a.size(0), 1).fill_(1)], 1)
                 else: # to be checked
                     a = a.view(-1, a.shape[-1])
-                    if layer.bias is not None:
-                        a = torch.cat([a, a.new(a.size(0), 1).fill_(1)], 1)
                     batch_size = a.size(0)
+            if layer.bias is not None:
+                a = torch.cat([a, a.new(a.size(0), 1).fill_(1)], 1)
             return batch_size, a
         
         elif isinstance(layer, nn.Conv2d):
@@ -107,7 +175,7 @@ class ComputeA:
                 a = a.view(-1, a.size(-1))
                 if layer.bias is not None:
                     a = torch.cat([a, a.new(a.size(0), 1).fill_(1)], 1)
-                a = a / spatial_size
+                a.div_(spatial_size)
             return batch_size, a
         
         else:
@@ -126,7 +194,7 @@ class ComputeA:
         return dim_A
 
 
-class ComputeG:
+class ComputeG_to_be_fixed:
     def __init__(self, linear_average=True, conv2d_average=False, use_tensor_core=False):
         self.linear_average = linear_average
         self.conv2d_average = conv2d_average
@@ -184,5 +252,4 @@ class ComputeG:
 
         else:
             raise NotImplementedError("KFAC does not support layer: ".format(layer))
-
 
