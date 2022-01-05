@@ -1,18 +1,21 @@
 #!/bin/bash
 
 # model training settings
-dnn="${dnn:-resnet32}"
-batch_size="${batch_size:-50}"
+#dnn="${dnn:-resnet32}"
+dnn="${dnn:-wrn28-10}"
+batch_size="${batch_size:-128}"
 base_lr="${base_lr:-0.1}"
-epochs="${epochs:-1}"
+epochs="${epochs:-200}"
 
+lr_decay_alpha="${lr_decay_alpha:-0.2}"
 if [ "$epochs" = "200" ]; then
-lr_decay="${lr_decay:-100 150}"
+#lr_decay="${lr_decay:-100 150}"
+lr_decay="${lr_decay:-60 120 160}"
 else
 lr_decay="${lr_decay:-35 75 90}"
 fi
 
-kfac="${kfac:-1}"
+kfac="${kfac:-0}"
 fac="${fac:-1}"
 kfac_name="${kfac_name:-inverse_dp}"
 exclude_parts="${exclude_parts:-''}"
@@ -20,7 +23,7 @@ stat_decay="${stat_decay:-0.95}"
 damping="${damping:-0.003}"
 
 horovod="${horovod:-0}"
-params="--horovod $horovod --model $dnn --batch-size $batch_size --base-lr $base_lr --epochs $epochs --kfac-update-freq $kfac --kfac-cov-update-freq $fac --lr-decay $lr_decay --stat-decay $stat_decay --damping $damping --kfac-name $kfac_name --exclude-parts ${exclude_parts}"
+params="--horovod $horovod --model $dnn --batch-size $batch_size --base-lr $base_lr --epochs $epochs --kfac-update-freq $kfac --kfac-cov-update-freq $fac --lr-decay $lr_decay --lr-decay-alpha $lr_decay_alpha --stat-decay $stat_decay --damping $damping --kfac-name $kfac_name --exclude-parts ${exclude_parts}"
 
 # multi-node multi-gpu settings
 ngpu_per_node="${ngpu_per_node:-4}"

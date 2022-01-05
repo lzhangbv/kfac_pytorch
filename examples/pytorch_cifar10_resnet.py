@@ -25,6 +25,7 @@ from torchvision import datasets, transforms, models
 import torch.multiprocessing as mp
 
 import cifar_resnet as resnet
+from cifar_wide_resnet import Wide_ResNet
 from utils import *
 
 import kfac
@@ -52,6 +53,8 @@ def initialize():
                         help='base learning rate (default: 0.1)')
     parser.add_argument('--lr-decay', nargs='+', type=int, default=[100, 150],
                         help='epoch intervals to decay lr')
+    parser.add_argument('--lr-decay-alpha', type=float, default=0.1,
+                        help='learning rate decay alpha')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                         help='SGD momentum (default: 0.9)')
     parser.add_argument('--weight-decay', type=float, default=5e-4, metavar='W',
@@ -191,6 +194,10 @@ def get_model(args):
         model = resnet.resnet56()
     elif args.model.lower() == "resnet110":
         model = resnet.resnet110()
+    elif args.model.lower() == "wrn28-10":
+        model = Wide_ResNet(28, 10, 0.3, 10)
+    elif args.model.lower() == "wrn28-20":
+        model = Wide_ResNet(28, 20, 0.3, 10)
 
     if args.cuda:
         model.cuda()
@@ -239,7 +246,7 @@ def get_model(args):
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank])
 
     # Learning Rate Schedule
-    lrs = create_lr_schedule(backend.comm.size(), args.warmup_epochs, args.lr_decay)
+    lrs = create_lr_schedule(backend.comm.size(), args.warmup_epochs, args.lr_decay, args.lr_decay_alpha)
     lr_scheduler = [LambdaLR(optimizer, lrs)]
     if preconditioner is not None:
         lr_scheduler.append(LambdaLR(preconditioner, lrs))
