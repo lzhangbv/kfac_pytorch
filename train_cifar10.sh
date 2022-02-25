@@ -6,8 +6,9 @@ dnn="${dnn:-wrn28-10}"
 batch_size="${batch_size:-128}"
 base_lr="${base_lr:-0.1}"
 epochs="${epochs:-200}"
+warmup_epochs="${warmup_epochs:-1}"
 
-lr_decay_alpha="${lr_decay_alpha:-0.2}"
+lr_decay_alpha="${lr_decay_alpha:-0.1}"
 if [ "$epochs" = "200" ]; then
 #lr_decay="${lr_decay:-100 150}"
 lr_decay="${lr_decay:-60 120 160}"
@@ -23,7 +24,7 @@ stat_decay="${stat_decay:-0.95}"
 damping="${damping:-0.003}"
 
 horovod="${horovod:-0}"
-params="--horovod $horovod --model $dnn --batch-size $batch_size --base-lr $base_lr --epochs $epochs --kfac-update-freq $kfac --kfac-cov-update-freq $fac --lr-decay $lr_decay --lr-decay-alpha $lr_decay_alpha --stat-decay $stat_decay --damping $damping --kfac-name $kfac_name --exclude-parts ${exclude_parts}"
+params="--horovod $horovod --model $dnn --batch-size $batch_size --base-lr $base_lr --epochs $epochs --warmup-epochs $warmup_epochs --kfac-update-freq $kfac --kfac-cov-update-freq $fac --lr-decay $lr_decay --lr-decay-alpha $lr_decay_alpha --stat-decay $stat_decay --damping $damping --kfac-name $kfac_name --exclude-parts ${exclude_parts}"
 
 # multi-node multi-gpu settings
 ngpu_per_node="${ngpu_per_node:-4}"
