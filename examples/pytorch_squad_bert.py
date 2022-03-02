@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
 # Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
 #
@@ -59,6 +58,8 @@ from transformers.data.processors.squad import SquadResult, SquadV1Processor, Sq
 MODEL_CONFIG_CLASSES = list(MODEL_FOR_QUESTION_ANSWERING_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
 
+import kfac
+import kfac.backend as backend
 import horovod.torch as hvd
 from utils import *
 
@@ -93,27 +94,24 @@ def initialize():
         default=None,
         type=str,
         help="The input data dir. Should contain the .json files for the task."
-        + "If no data dir or train/predict files are specified, will run with tensorflow_datasets.",
     )
     parser.add_argument(
         "--train_file",
         default=None,
         type=str,
         help="The input training file. If a data dir is specified, will look for the file there"
-        + "If no data dir or train/predict files are specified, will run with tensorflow_datasets.",
     )
     parser.add_argument(
         "--predict_file",
         default=None,
         type=str,
         help="The input evaluation file. If a data dir is specified, will look for the file there"
-        + "If no data dir or train/predict files are specified, will run with tensorflow_datasets.",
     )
     parser.add_argument(
         "--config_name", default="", type=str, help="Pretrained config name or path if not the same as model_name"
     )
     parser.add_argument(
-        "--tokenizer_name",
+        "--tokenizer_name_or_path",
         default="",
         type=str,
         help="Pretrained tokenizer name or path if not the same as model_name",
@@ -169,9 +167,11 @@ def initialize():
     parser.add_argument("--weight_decay", default=0.0, type=float, help="Weight decay if we apply some.")
     parser.add_argument("--adam_epsilon", default=1e-8, type=float, help="Epsilon for Adam optimizer.")
     parser.add_argument("--max_grad_norm", default=1.0, type=float, help="Max gradient norm.")
-    parser.add_argument(
-        "--num_train_epochs", default=3.0, type=float, help="Total number of training epochs to perform."
-    )
+    parser.add_argument("--num_train_epochs", default=3, type=int, 
+            help="Total number of training epochs to perform.")
+    parser.add_argument("--max_steps", default=0, type=int, 
+            help="If > 0: set total number of training steps to perform. Override num_train_epochs.")
+
     parser.add_argument("--warmup_steps", default=0, type=int, help="Linear warmup over warmup_steps.")
     parser.add_argument(
         "--n_best_size",
@@ -201,9 +201,6 @@ def initialize():
 
     parser.add_argument("--no_cuda", action="store_true", help="Whether not to use CUDA when available")
 
-    parser.add_argument(
-        "--overwrite_cache", action="store_true", help="Overwrite the cached training and evaluation sets"
-    )
     parser.add_argument("--seed", type=int, default=42, help="random seed for initialization")
 
     parser.add_argument("--threads", type=int, default=1, help="multiple threads for converting example to features")
@@ -220,6 +217,7 @@ def initialize():
     # Setup CUDA, GPU & distributed training
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     hvd.init()
+    backend.init("Horovod")
 
     args.local_rank = hvd.local_rank()
 
@@ -234,7 +232,7 @@ def initialize():
     # Logging Settings
     os.makedirs(args.log_dir, exist_ok=True)
     logfile = os.path.join(args.log_dir,
-        '{}_ep{}_bs{}_gpu{}.log'.format(args.model_type, args.num_train_epochs, args.per_gpu_train_batch_size, hvd.comm.size()))
+        'debug_squad_{}_ep{}_bs{}_gpu{}.log'.format(args.model_type, args.num_train_epochs, args.per_gpu_train_batch_size, hvd.size()))
 
     hdlr = logging.FileHandler(logfile)
     hdlr.setFormatter(formatter)
@@ -247,12 +245,38 @@ def initialize():
     
     return args
 
-def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=False):
-    if hvd.rank() > 0 and not evaluate:
-        # Make sure only the first process in distributed training process the dataset, and the others will use the cache
+def preprocess_and_cache(args, tokenizer, evaluate, cached_features_file):
+    if hvd.size() > 1 and hvd.rank() > 0:
+        # Make sure only the first process in distributed training process the dataset.
         hvd.barrier()
 
-    # Load data features from cache or dataset file
+    processor = SquadV2Processor() if args.version_2_with_negative else SquadV1Processor()
+    # Make sure the SQuAD dataset has been downloaded and saved in data_dir/xxx_file.
+    if evaluate:
+        examples = processor.get_dev_examples(args.data_dir, filename=args.predict_file)
+    else:
+        examples = processor.get_train_examples(args.data_dir, filename=args.train_file)
+
+    features, dataset = squad_convert_examples_to_features(
+        examples=examples,
+        tokenizer=tokenizer,
+        max_seq_length=args.max_seq_length,
+        doc_stride=args.doc_stride,
+        max_query_length=args.max_query_length,
+        is_training=not evaluate,
+        return_dataset="pt",
+        threads=args.threads,
+    )
+    
+    logger.info("Saving features into cached file %s", cached_features_file)
+    torch.save({"features": features, "dataset": dataset, "examples": examples}, cached_features_file)
+
+    if hvd.size() > 1 and hvd.rank() == 0:
+        hvd.barrier()
+
+def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=False):
+    """Load data features from cache or dataset file"""
+
     input_dir = args.data_dir if args.data_dir else "."
     cached_features_file = os.path.join(
         input_dir,
@@ -263,116 +287,70 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
         ),
     )
 
-    # Init features and dataset from cache if it exists
-    if os.path.exists(cached_features_file) and not args.overwrite_cache:
-        if hvd.rank() == 0 and not evaluate:
-            # Make sure only the first process in distributed training process the dataset, and the others will use the cache
-            hvd.barrier()
-        logger.info("Loading features from cached file %s", cached_features_file)
-        features_and_dataset = torch.load(cached_features_file)
-        features, dataset, examples = (
-            features_and_dataset["features"],
-            features_and_dataset["dataset"],
-            features_and_dataset["examples"],
-        )
-    else:
-        logger.info("Creating features from dataset file at %s", input_dir)
+    # Preprocess dataset if the cache does not exist
+    if not os.path.exists(cached_features_file):
+        preprocess_and_cache(args, tokenizer, evaluate, cached_features_file)
 
-        if not args.data_dir and ((evaluate and not args.predict_file) or (not evaluate and not args.train_file)):
-            try:
-                import tensorflow_datasets as tfds
-            except ImportError:
-                raise ImportError("If not data_dir is specified, tensorflow_datasets needs to be installed.")
-
-            if args.version_2_with_negative:
-                logger.warn("tensorflow_datasets does not handle version 2 of SQuAD.")
-
-            tfds_examples = tfds.load("squad")
-            examples = SquadV1Processor().get_examples_from_dataset(tfds_examples, evaluate=evaluate)
-        else:
-            processor = SquadV2Processor() if args.version_2_with_negative else SquadV1Processor()
-            if evaluate:
-                examples = processor.get_dev_examples(args.data_dir, filename=args.predict_file)
-            else:
-                examples = processor.get_train_examples(args.data_dir, filename=args.train_file)
-
-        features, dataset = squad_convert_examples_to_features(
-            examples=examples,
-            tokenizer=tokenizer,
-            max_seq_length=args.max_seq_length,
-            doc_stride=args.doc_stride,
-            max_query_length=args.max_query_length,
-            is_training=not evaluate,
-            return_dataset="pt",
-            threads=args.threads,
-        )
-
-        if hvd.rank() == 0:
-            logger.info("Saving features into cached file %s", cached_features_file)
-            torch.save({"features": features, "dataset": dataset, "examples": examples}, cached_features_file)
-
-        if hvd.rank() == 0 and not evaluate:
-            # Make sure only the first process in distributed training process the dataset, and the others will use the cache
-            torch.distributed.barrier()
+    # Load features and dataset from cache
+    features_and_dataset = torch.load(cached_features_file)
+    features, dataset, examples = (
+        features_and_dataset["features"],
+        features_and_dataset["dataset"],
+        features_and_dataset["examples"],
+    )
 
     if output_examples:
         return dataset, examples, features
     return dataset
 
 def build_tokenizer(args):
-    if hvd.size() > 1 and hvd.rank() > 0:
-        hvd.barrier()
-
     tokenizer = AutoTokenizer.from_pretrained(
-        args.tokenizer_name if args.tokenizer_name else args.model_name_or_path,
+        args.tokenizer_name_or_path,
         do_lower_case=args.do_lower_case,
-        cache_dir=args.cache_dir if args.cache_dir else None,
+        cache_dir=None,
+        use_fast=False
     )
-
-    if hvd.size() > 1 and hvd.rank() == 0:
-        hvd.barrier()
     return tokenizer
 
 def get_dataset(args):
+    # load pretrained tokenizer
     tokenizer = build_tokenizer(args)
-
+    
+    # load train datasets
     train_dataset = load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=False)
-
     eval_dataset, eval_examples, eval_features = load_and_cache_examples(args, tokenizer, evaluate=True, output_examples=True)
     test_inputs = (eval_examples, eval_features, tokenizer) # used to calculate F1 score
 
-    kwargs = {'num_workers': 4, 'pin_memory': True} if args.cuda else {}
-    args.batch_size = args.per_gpu_train_batch_size
+    # todo: train and valid split, used to calculate validation loss
 
+    kwargs = {'num_workers': 4, 'pin_memory': True} if args.cuda else {}
+    # train dataloader
+    args.batch_size = args.per_gpu_train_batch_size
     train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset, num_replicas=hvd.size(), rank=hvd.rank())
     train_loader = torch.utils.data.DataLoader(train_dataset,batch_size=args.batch_size, sampler=train_sampler, **kwargs)
 
+    # eval dataloader
     args.eval_batch_size = args.per_gpu_eval_batch_size
     test_sampler = torch.utils.data.SequentialSampler(eval_dataset)
     test_loader = torch.utils.data.DataLoader(eval_dataset,batch_size=args.eval_batch_size, sampler=test_sampler, **kwargs)
 
     return train_sampler, train_loader, test_loader, test_inputs
 
+
 def get_model(args):
     # Load pretrained model
-    if hvd.size() > 1 and hvd.rank() > 0:
-        hvd.barrier()
-    
     args.model_type = args.model_type.lower()
     config = AutoConfig.from_pretrained(
-        args.config_name if args.config_name else args.model_name_or_path,
-        cache_dir=args.cache_dir if args.cache_dir else None,
+        args.model_name_or_path,
+        cache_dir=None,
     )
 
     model = AutoModelForQuestionAnswering.from_pretrained(
         args.model_name_or_path,
         from_tf=bool(".ckpt" in args.model_name_or_path),
         config=config,
-        cache_dir=args.cache_dir if args.cache_dir else None,
+        cache_dir=None,
     )
-    
-    if hvd.rank() == 0 and hvd.size() > 1:
-        hvd.barrier()
     
     if args.cuda:
         model.cuda()
@@ -431,21 +409,27 @@ def train(args, epoch, model, optimizer, preconditioner, train_sampler, train_lo
         
         loss.backward()
         optimizer.step()
+        args.global_step += 1
 
         if (batch_idx + 1) % display == 0:
             if args.verbose:
                 logger.info("[%d] epoch [%d] iteration train loss: %.4f" % (epoch, batch_idx, train_loss.avg.item()))
+                train_loss = Metric('train_loss')
             if evaluate and hvd.rank() == 0: 
                 eval_loss = cal_evaluate_loss(model, test_loader, args)
                 logger.info("[%d] epoch [%d] iteration eval loss: %.4f" % (epoch, batch_idx, eval_loss))
+
+        if args.max_steps > 0 and args.global_step > args.max_steps:
+            break
 
 
 def cal_evaluate_loss(model, test_loader, args):
     model.eval()
     loss_sum = 0.0
     loss_cnt = 0
+    eval_batch_num = 50
 
-    for batch in test_loader:
+    for batch_idx, batch in enumerate(test_loader):
         if args.cuda:
             batch = tuple(t.cuda() for t in batch)
 
@@ -454,15 +438,17 @@ def cal_evaluate_loss(model, test_loader, args):
                 "input_ids": batch[0],
                 "attention_mask": batch[1],
                 "token_type_ids": batch[2],
-                "return_dict": False,
             }
 
-            feature_indices = batch[3]
             outputs = model(**inputs)
+            # to be fixed: how to get eval loss during training process
             loss = outputs[0]
 
             loss_sum += loss.item()
             loss_cnt += batch[0].shape[0]
+
+        if batch_idx >= eval_batch_num:
+            break
 
     model.train()
     return loss_sum / loss_cnt
@@ -482,7 +468,6 @@ def cal_evaluate_F1_score(model, test_loader, test_inputs, args):
                 "input_ids": batch[0],
                 "attention_mask": batch[1],
                 "token_type_ids": batch[2],
-                "return_dict": False,
             }
 
             feature_indices = batch[3]
@@ -495,31 +480,16 @@ def cal_evaluate_F1_score(model, test_loader, test_inputs, args):
 
             output = [to_list(output[i]) for output in outputs]
 
-            # Some models (XLNet, XLM) use 5 arguments for their predictions, while the other "simpler"
-            # models only use two.
-            if len(output) >= 5:
-                start_logits = output[0]
-                start_top_index = output[1]
-                end_logits = output[2]
-                end_top_index = output[3]
-                cls_logits = output[4]
-
-                result = SquadResult(
-                    unique_id,
-                    start_logits,
-                    end_logits,
-                    start_top_index=start_top_index,
-                    end_top_index=end_top_index,
-                    cls_logits=cls_logits,
-                )
-
-            else:
-                start_logits, end_logits = output
-                result = SquadResult(unique_id, start_logits, end_logits)
+            assert len(output) == 2 # check whether two arguments used for predictions
+            start_logits, end_logits = output
+            result = SquadResult(unique_id, start_logits, end_logits)
 
             all_results.append(result)
 
-    
+    # compute predictions
+    output_prediction_file = os.path.join(args.log_dir, "squad_bert_predictions.json")
+    output_nbest_file = os.path.join(args.log_dir, "squad_bert_nbest_predictions.json")
+
     predictions = compute_predictions_logits(
         examples,
         features,
@@ -527,9 +497,9 @@ def cal_evaluate_F1_score(model, test_loader, test_inputs, args):
         args.n_best_size,
         args.max_answer_length,
         args.do_lower_case,
-        None, #output_prediction_file
-        None, #output_nbest_file
-        None, #output_null_log_odds_file
+        None, #output_prediction_file,
+        None, #output_nbest_file,
+        None, #output_null_log_odds_file,
         args.verbose_logging,
         args.version_2_with_negative,
         args.null_score_diff_threshold,
@@ -537,27 +507,31 @@ def cal_evaluate_F1_score(model, test_loader, test_inputs, args):
     )
 
     # Compute the F1 and exact scores.
-    result = squad_evaluate(examples, predictions)
-    return result
+    results = squad_evaluate(examples, predictions)
+    return results
 
 if __name__ == "__main__":
     torch.multiprocessing.set_start_method('spawn')
 
     args = initialize()
+    args.global_step = 0
 
     train_sampler, train_loader, test_loader, test_inputs = get_dataset(args)
 
     model, optimizer, preconditioner = get_model(args)
-    eval_in_progress = True
+    eval_in_progress = False
 
     start = time.time()
-    for epoch in args.num_train_epochs:
-        train(args, epoch, model, optimizer, preconditioner, train_sampler, train_loader, eval_in_progress, test_loader)
+    for epoch in range(args.num_train_epochs):
+        train(args, epoch, model, optimizer, preconditioner, 
+                train_sampler, train_loader, eval_in_progress, test_loader)
+        if args.max_steps > 0 and args.global_step > args.max_steps:
+            break
 
     if args.verbose:
         logger.info("Total Training Time: %s", str(datetime.timedelta(seconds=time.time() - start)))
     
     eval_F1_score = True
     if eval_F1_score and hvd.rank() == 0:
-        result = cal_evaluate_F1_score(model, test_loader, test_inputs, args)
-        logger.info("Evaluation result: {}".format(result))
+        results = cal_evaluate_F1_score(model, test_loader, test_inputs, args)
+        logger.info("Evaluation exact match: %.4f, F1 score: %.4f" % (results['exact'], results['f1']))
