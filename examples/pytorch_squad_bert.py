@@ -250,7 +250,7 @@ def initialize():
     # Logging Settings
     os.makedirs(args.log_dir, exist_ok=True)
     logfile = os.path.join(args.log_dir,
-        'debug_squad_{}_ep{}_bs{}_gpu{}.log'.format(args.model_type, args.num_train_epochs, args.per_gpu_train_batch_size, hvd.size()))
+        'debug_squad_{}_ep{}_bs{}_gpu{}_kfac{}_{}.log'.format(args.model_type, args.num_train_epochs, args.per_gpu_train_batch_size, hvd.size(), args.kfac_update_freq, args.kfac_name))
 
     hdlr = logging.FileHandler(logfile)
     hdlr.setFormatter(formatter)
@@ -522,7 +522,8 @@ def cal_evaluate_F1_score(model, test_loader, test_inputs, args):
             eval_feature = features[feature_index.item()]
             unique_id = int(eval_feature.unique_id)
 
-            output = [to_list(output[i]) for output in outputs]
+            #output = [to_list(output[i]) for output in outputs]
+            output = [to_list(output[i]) for output in outputs.to_tuple()]
 
             assert len(output) == 2 # check whether two arguments used for predictions
             start_logits, end_logits = output

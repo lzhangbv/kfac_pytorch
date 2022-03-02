@@ -7,10 +7,11 @@ eval_batch_size="${eval_batch_size:-8}"
 lr="${lr:-0.00003}"
 epochs="${epochs:-2}"
 steps="${steps:-15000}"
-use_adamw="${use_adamw:-0}"
+steps=200
+use_adamw="${use_adamw:-1}"
 
 # kfac
-kfac="${kfac:-1}"
+kfac="${kfac:-0}"
 fac="${fac:-1}"
 kfac_name="${kfac_name:-inverse_dp}"
 stat_decay="${stat_decay:-0.95}"
