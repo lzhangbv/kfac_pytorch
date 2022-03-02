@@ -1,4 +1,4 @@
-# Language Translation with nn.Transformer and torchtext==0.6.0
+# Language Translation with Transformer and torchtext==0.6.0 on Multi-30k De-En
 # This script is based on https://github.com/jadore801120/attention-is-all-you-need-pytorch
 
 # todo: compatible with Torch's dataloader with torchtest (stable version)

@@ -144,8 +144,9 @@ class KFAC(optim.Optimizer):
                 module_name = 'module_name_%s_%d' % (classname, name_idx)
                 self.module_names.append(module_name)
                 name_idx += 1
-        #if backend.comm.rank() == 0:
-        #    logger.info("#register modules: %s", len(self.modules))
+        if backend.comm.rank() == 0:
+            logger.info("#register modules: %s", len(self.modules))
+            logger.info("register modules: %s", set(self.modules))
 
     def schedule_module_ranks(self):
         """Schedule ranks for each module to compute KFs"""

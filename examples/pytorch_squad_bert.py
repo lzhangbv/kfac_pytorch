@@ -88,6 +88,24 @@ def initialize():
         type=str
     )
 
+    # K-FAC parameters
+    parser.add_argument('--kfac-name', type=str, default='inverse', 
+                        help='choises: %s' % kfac.kfac_mappers.keys() + ', default: '+'inverse')
+    parser.add_argument('--exclude-parts', type=str, default='',
+                        help='choises: CommunicateInverse,ComputeInverse,CommunicateFactor,ComputeFactor')
+    parser.add_argument('--kfac-update-freq', type=int, default=0,
+                        help='iters between kfac inv ops (0 = no kfac) (default: 0)')
+    parser.add_argument('--kfac-cov-update-freq', type=int, default=1,
+                        help='iters between kfac cov ops (default: 1)')
+    parser.add_argument('--stat-decay', type=float, default=0.95,
+                        help='Alpha value for covariance accumulation (default: 0.95)')
+    parser.add_argument('--damping', type=float, default=0.002,
+                        help='KFAC damping factor (default 0.003)')
+    parser.add_argument('--kl-clip', type=float, default=0.001,
+                        help='KL clip (default: 0.001)')
+    parser.add_argument('--use-adamw', type=int, default=1, 
+                        help='use AdamW and its corresponding learnign rate schedule (default: 1)')
+
     # Other parameters
     parser.add_argument(
         "--data_dir",
@@ -344,6 +362,8 @@ def get_model(args):
         args.model_name_or_path,
         cache_dir=None,
     )
+    #vocab_size = 30522
+    vocab_size = config.vocab_size
 
     model = AutoModelForQuestionAnswering.from_pretrained(
         args.model_name_or_path,
@@ -357,19 +377,36 @@ def get_model(args):
 
     # optimizer
     criterion = nn.CrossEntropyLoss()
-
-    # K-FAC
-    preconditioner = None
-
-    no_decay = ["bias", "LayerNorm.weight"]
-    optimizer_grouped_parameters = [
-        {
-            "params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
-            "weight_decay": args.weight_decay,
-        },
-        {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], "weight_decay": 0.0},
-    ]
-    optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
+    if args.kfac_update_freq == 0:
+        if args.use_adamw:
+            no_decay = ["bias", "LayerNorm.weight"]
+            optimizer_grouped_parameters = [
+                {
+                    "params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
+                    "weight_decay": args.weight_decay,
+                },
+                {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], "weight_decay": 0.0},
+            ]
+            optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
+        else:
+            args.learning_rate = args.learning_rate * hvd.size()
+            optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, 
+                    momentum=0.9, weight_decay=args.weight_decay)
+        preconditioner = None
+    else:
+        args.learning_rate = args.learning_rate * hvd.size()
+        optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, 
+                momentum=0.9, weight_decay=args.weight_decay)
+        KFAC = kfac.get_kfac_module(args.kfac_name)
+        
+        preconditioner = KFAC(
+                model, lr=args.learning_rate, 
+                factor_decay=args.stat_decay,
+                damping=args.damping, kl_clip=args.kl_clip,
+                fac_update_freq=args.kfac_cov_update_freq,
+                kfac_update_freq=args.kfac_update_freq,
+                exclude_parts=args.exclude_parts,
+                exclude_vocabulary_size=vocab_size)
 
     optimizer = hvd.DistributedOptimizer(optimizer, 
                                         named_parameters=model.named_parameters(),
@@ -408,7 +445,14 @@ def train(args, epoch, model, optimizer, preconditioner, train_sampler, train_lo
             train_loss.update(loss)
         
         loss.backward()
-        optimizer.step()
+        optimizer.synchronize()
+
+        if preconditioner is not None:
+            preconditioner.step(epoch=epoch)
+        
+        with optimizer.skip_synchronize():
+            optimizer.step()
+        
         args.global_step += 1
 
         if (batch_idx + 1) % display == 0:
