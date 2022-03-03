@@ -189,24 +189,26 @@ class KFAC(KFAC_BASE):
             precon_grad = self.m_precon_grad[module]
             v = self._reshape_preconditioned_grad(module, precon_grad)
             
-            # accumulate vg_sum
-            vg_sum += (v[0] * module.weight.grad.data * self.lr ** 2).sum().item()
-            if module.bias is not None:
-                vg_sum += (v[1] * module.bias.grad.data * self.lr ** 2).sum().item()
-            
             # copy the preconditioned gradients
             module.weight.grad.data.copy_(v[0])
             if module.bias is not None:
                 module.bias.grad.data.copy_(v[1])
+            
+            # accumulate vg_sum
+            if self.kl_clip is not None:
+                vg_sum += (v[0] * module.weight.grad.data * self.lr ** 2).sum().item()
+                if module.bias is not None:
+                    vg_sum += (v[1] * module.bias.grad.data * self.lr ** 2).sum().item()
         
         # kl_clip
-        if self.exclude_communicate_inverse:
-            nu = 1
-        else:
-            nu = min(1.0, math.sqrt(self.kl_clip / abs(vg_sum)))
+        if self.kl_clip is not None:
+            if self.exclude_communicate_inverse:
+                nu = 1
+            else:
+                nu = min(1.0, math.sqrt(self.kl_clip / abs(vg_sum)))
         
-        for module in self.modules:
-            module.weight.grad.data.mul_(nu)
-            if module.bias is not None:
-                module.bias.grad.data.mul_(nu)
+            for module in self.modules:
+                module.weight.grad.data.mul_(nu)
+                if module.bias is not None:
+                    module.bias.grad.data.mul_(nu)
 

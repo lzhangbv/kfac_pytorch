@@ -6,6 +6,7 @@ import torch.nn.functional as F
 #import torchsso
 #import tcmm
 
+Linear_Average = True
 
 def mat_inv(x, method="cholesky"):
     if method == "inv":
@@ -56,7 +57,7 @@ def _extract_patches(x, kernel_size, stride, padding):
 def update_running_avg(new, current, alpha):
     """Compute running average of matrix in-place
 
-    current = alpha*new + (1-alpha)*current
+    current = (1-alpha) * new + (alpha) * current
     """
     current *= alpha / (1 - alpha)
     current += new
@@ -135,7 +136,7 @@ class _ComputeG:
 
 
 class ComputeA:
-    def __init__(self, linear_average=True, conv2d_average=False, use_tensor_core=False):
+    def __init__(self, linear_average=Linear_Average, conv2d_average=False, use_tensor_core=False):
         self.linear_average = linear_average
         self.conv2d_average = conv2d_average
         self.use_tensor_core = use_tensor_core
@@ -196,7 +197,7 @@ class ComputeA:
 
 
 class ComputeG:
-    def __init__(self, linear_average=True, conv2d_average=False, use_tensor_core=False):
+    def __init__(self, linear_average=Linear_Average, conv2d_average=False, use_tensor_core=False):
         self.linear_average = linear_average
         self.conv2d_average = conv2d_average
         self.use_tensor_core = use_tensor_core

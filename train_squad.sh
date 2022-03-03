@@ -7,7 +7,7 @@ eval_batch_size="${eval_batch_size:-8}"
 lr="${lr:-0.00003}"
 epochs="${epochs:-2}"
 steps="${steps:-15000}"
-steps=200
+#steps=200 # fast test
 use_adamw="${use_adamw:-1}"
 
 # kfac

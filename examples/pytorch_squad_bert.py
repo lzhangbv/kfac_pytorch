@@ -101,8 +101,8 @@ def initialize():
                         help='Alpha value for covariance accumulation (default: 0.95)')
     parser.add_argument('--damping', type=float, default=0.002,
                         help='KFAC damping factor (default 0.003)')
-    parser.add_argument('--kl-clip', type=float, default=0.001,
-                        help='KL clip (default: 0.001)')
+    parser.add_argument('--kl-clip', type=float, default=None,
+                        help='KL clip (default: None)')
     parser.add_argument('--use-adamw', type=int, default=1, 
                         help='use AdamW and its corresponding learnign rate schedule (default: 1)')
 
@@ -249,8 +249,15 @@ def initialize():
 
     # Logging Settings
     os.makedirs(args.log_dir, exist_ok=True)
+    if args.kfac_update_freq > 0:
+        alg = args.kfac_name
+    else:
+        alg = 'adamw' if args.use_adamw else 'sgd'
+    
     logfile = os.path.join(args.log_dir,
-        'debug_squad_{}_ep{}_bs{}_gpu{}_kfac{}_{}.log'.format(args.model_type, args.num_train_epochs, args.per_gpu_train_batch_size, hvd.size(), args.kfac_update_freq, args.kfac_name))
+        'debug_squad_{}_ep{}_bs{}_gpu{}_kfac{}_{}.log'.format(args.model_type, 
+        args.num_train_epochs, args.per_gpu_train_batch_size, hvd.size(), 
+        args.kfac_update_freq, alg))
 
     hdlr = logging.FileHandler(logfile)
     hdlr.setFormatter(formatter)
@@ -362,8 +369,9 @@ def get_model(args):
         args.model_name_or_path,
         cache_dir=None,
     )
-    #vocab_size = 30522
-    vocab_size = config.vocab_size
+    
+    vocab_size = config.vocab_size # vocab_size=30522
+    #vocab_size = 2 # for qa output layer
 
     model = AutoModelForQuestionAnswering.from_pretrained(
         args.model_name_or_path,
@@ -372,6 +380,9 @@ def get_model(args):
         cache_dir=None,
     )
     
+    #if args.verbose:
+    #    logger.info("Model:%s" % model)
+
     if args.cuda:
         model.cuda()
 

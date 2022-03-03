@@ -6,7 +6,7 @@ eval_batch_size=8
 lr=0.00003
 
 epochs=2
-steps=15000
+steps=200
 
 # SGD
 #kfac=0 use_adamw=0 epochs=$epochs steps=$steps bash train_squad.sh
@@ -18,7 +18,8 @@ steps=15000
 kfac=100
 fac=10
 kfac_name=eigen
-stat_decay=0.95
-damping=0.03
+#kfac_name=inverse
+stat_decay=0
+damping=0.05
 
-kfac=$kfac fac=$fac kfac_name=$kfac_name epochs=$epochs steps=$steps bash train_squad.sh
+kfac=$kfac fac=$fac kfac_name=$kfac_name damping=$damping stat_decay=$stat_decay epochs=$epochs steps=$steps bash train_squad.sh
