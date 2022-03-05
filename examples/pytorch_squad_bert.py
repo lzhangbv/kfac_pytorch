@@ -347,19 +347,28 @@ def get_dataset(args):
     test_inputs = (eval_examples, eval_features, tokenizer) # used to calculate F1 score
 
     # todo: train and valid split, used to calculate validation loss
+    valid_size = int(len(train_dataset) * 0.005)  #0.005 takes ~5s
+    train_size = len(train_dataset) - valid_size
+    train_dataset, valid_dataset = torch.utils.data.random_split(train_dataset, [train_size, valid_size])
 
     kwargs = {'num_workers': 4, 'pin_memory': True} if args.cuda else {}
+    
     # train dataloader
     args.batch_size = args.per_gpu_train_batch_size
     train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset, num_replicas=hvd.size(), rank=hvd.rank())
     train_loader = torch.utils.data.DataLoader(train_dataset,batch_size=args.batch_size, sampler=train_sampler, **kwargs)
 
+    # valid dataloader
+    args.eval_batch_size = args.per_gpu_eval_batch_size
+    valid_sampler = torch.utils.data.SequentialSampler(valid_dataset)
+    valid_loader = torch.utils.data.DataLoader(valid_dataset,batch_size=args.eval_batch_size, sampler=valid_sampler, **kwargs)
+    
     # eval dataloader
     args.eval_batch_size = args.per_gpu_eval_batch_size
     test_sampler = torch.utils.data.SequentialSampler(eval_dataset)
     test_loader = torch.utils.data.DataLoader(eval_dataset,batch_size=args.eval_batch_size, sampler=test_sampler, **kwargs)
 
-    return train_sampler, train_loader, test_loader, test_inputs
+    return train_sampler, train_loader, valid_loader, test_loader, test_inputs
 
 
 def get_model(args):
@@ -399,6 +408,8 @@ def get_model(args):
                 {"params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], "weight_decay": 0.0},
             ]
             optimizer = AdamW(optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon)
+            # use Adam
+            #optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, betas=(0.9, 0.98), eps=1e-09)
         else:
             args.learning_rate = args.learning_rate * hvd.size()
             optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, 
@@ -429,7 +440,7 @@ def get_model(args):
 
     return model, optimizer, preconditioner
 
-def train(args, epoch, model, optimizer, preconditioner, train_sampler, train_loader, evaluate, test_loader):
+def train(args, epoch, model, optimizer, preconditioner, train_sampler, train_loader, validate, valid_loader):
     model.train()
     train_sampler.set_epoch(epoch)
 
@@ -470,21 +481,20 @@ def train(args, epoch, model, optimizer, preconditioner, train_sampler, train_lo
             if args.verbose:
                 logger.info("[%d] epoch [%d] iteration train loss: %.4f" % (epoch, batch_idx, train_loss.avg.item()))
                 train_loss = Metric('train_loss')
-            if evaluate and hvd.rank() == 0: 
-                eval_loss = cal_evaluate_loss(model, test_loader, args)
-                logger.info("[%d] epoch [%d] iteration eval loss: %.4f" % (epoch, batch_idx, eval_loss))
+            if validate and hvd.rank() == 0: 
+                valid_loss = cal_validate_loss(model, valid_loader, args)
+                logger.info("[%d] epoch [%d] iteration valid loss: %.4f" % (epoch, batch_idx, valid_loss))
 
         if args.max_steps > 0 and args.global_step > args.max_steps:
             break
+        
 
-
-def cal_evaluate_loss(model, test_loader, args):
-    model.eval()
+def cal_validate_loss(model, valid_loader, args):
     loss_sum = 0.0
     loss_cnt = 0
-    eval_batch_num = 50
+    eval_batch_num = -1
 
-    for batch_idx, batch in enumerate(test_loader):
+    for batch_idx, batch in enumerate(valid_loader):
         if args.cuda:
             batch = tuple(t.cuda() for t in batch)
 
@@ -493,19 +503,20 @@ def cal_evaluate_loss(model, test_loader, args):
                 "input_ids": batch[0],
                 "attention_mask": batch[1],
                 "token_type_ids": batch[2],
+                "start_positions": batch[3],
+                "end_positions": batch[4],
             }
 
             outputs = model(**inputs)
-            # to be fixed: how to get eval loss during training process
+            # get valid loss during training process
             loss = outputs[0]
 
             loss_sum += loss.item()
             loss_cnt += batch[0].shape[0]
 
-        if batch_idx >= eval_batch_num:
+        if eval_batch_num > 0 and batch_idx >= eval_batch_num:
             break
 
-    model.train()
     return loss_sum / loss_cnt
 
 
@@ -572,22 +583,27 @@ if __name__ == "__main__":
     args = initialize()
     args.global_step = 0
 
-    train_sampler, train_loader, test_loader, test_inputs = get_dataset(args)
+    train_sampler, train_loader, valid_loader, test_loader, test_inputs = get_dataset(args)
 
     model, optimizer, preconditioner = get_model(args)
-    eval_in_progress = False
+    valid_in_progress = False
+    eval_in_progress = True
 
     start = time.time()
     for epoch in range(args.num_train_epochs):
         train(args, epoch, model, optimizer, preconditioner, 
-                train_sampler, train_loader, eval_in_progress, test_loader)
+                train_sampler, train_loader, valid_in_progress, valid_loader)
+        
+        if eval_in_progress and hvd.rank() == 0:
+            results = cal_evaluate_F1_score(model, test_loader, test_inputs, args)
+            logger.info("Epoch [%d] F1 score: %.4f" % (epoch, results['f1']))
+        
         if args.max_steps > 0 and args.global_step > args.max_steps:
             break
 
     if args.verbose:
         logger.info("Total Training Time: %s", str(datetime.timedelta(seconds=time.time() - start)))
     
-    eval_F1_score = True
-    if eval_F1_score and hvd.rank() == 0:
+    if not eval_in_progress and hvd.rank() == 0:
         results = cal_evaluate_F1_score(model, test_loader, test_inputs, args)
         logger.info("Evaluation exact match: %.4f, F1 score: %.4f" % (results['exact'], results['f1']))
