@@ -15,10 +15,11 @@ weight_decay="${weight_decay:-0.0}"
 kfac="${kfac:-0}"
 fac="${fac:-0}"
 kfac_name="${kfac_name:-inverse_dp}"
+exclude_parts="${exclude_parts:-''}"
 stat_decay="${stat_decay:-0.95}"
 damping="${damping:-0.003}"
 
-params="--model_type $model_type --do_lower_case --data_dir /datasets/bert --train_file train-v1.1.json --predict_file dev-v1.1.json --tokenizer_name_or_path /datasets/bert/tokenizer --per_gpu_train_batch_size $batch_size --per_gpu_eval_batch_size $eval_batch_size --learning_rate $lr --weight_decay $weight_decay --num_train_epochs $epochs --max_steps $steps --use-adamw $use_adamw --kfac-update-freq $kfac --kfac-cov-update-freq $fac --stat-decay $stat_decay --damping $damping --kfac-name $kfac_name"
+params="--model_type $model_type --do_lower_case --data_dir /datasets/bert --train_file train-v1.1.json --predict_file dev-v1.1.json --tokenizer_name_or_path /datasets/bert/tokenizer --per_gpu_train_batch_size $batch_size --per_gpu_eval_batch_size $eval_batch_size --learning_rate $lr --weight_decay $weight_decay --num_train_epochs $epochs --max_steps $steps --use-adamw $use_adamw --kfac-update-freq $kfac --kfac-cov-update-freq $fac --stat-decay $stat_decay --damping $damping --kfac-name $kfac_name --exclude-parts ${exclude_parts}"
 
 # multi-node multi-gpu settings
 nworkers="${nworkers:-4}"

@@ -7,6 +7,7 @@ from kfac.kfac_preconditioner_inv_dp import KFAC as KFAC_INV_DP
 from kfac.kfac_preconditioner_inv_dp_block import KFAC as KFAC_INV_DP_BLOCK
 from kfac.kfac_preconditioner_inv_dp_hybrid import KFAC as KFAC_INV_DP_HYBRID
 from kfac.kfac_preconditioner_eigen_dp import KFAC as KFAC_EIGEN_DP
+from kfac.kfac_preconditioner_inv_spd import KFAC as KFAC_INV_SPD
 
 KFAC = KFAC_INV
 
@@ -14,6 +15,7 @@ kfac_mappers = {
     'base': KFAC_BASE,
     'inverse': KFAC_INV, 
     'inverse_kaisa': KFAC_INV_KAISA,
+    'inverse_spd': KFAC_INV_SPD,
     'eigen': KFAC_EIGEN,
     'inverse_dp': KFAC_INV_DP, 
     'eigen_dp': KFAC_EIGEN_DP,

@@ -220,7 +220,9 @@ class KFAC(optim.Optimizer):
                 self._communicate_pred()
         
         # (4) update preconditioned gradients in place
-        self._update_grad_in_place()
+        if not self.exclude_compute_inverse:
+            self._update_grad_in_place()
+        
         self.steps += 1
 
         # clear the temporal memory iteratively

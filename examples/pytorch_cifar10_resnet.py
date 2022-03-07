@@ -26,6 +26,7 @@ import torch.multiprocessing as mp
 
 import cifar_resnet as resnet
 from cifar_wide_resnet import Wide_ResNet
+from cifar_vgg import VGG
 from utils import *
 
 import kfac
@@ -39,6 +40,8 @@ def initialize():
     parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Example')
     parser.add_argument('--model', type=str, default='resnet32',
                         help='ResNet model to use [20, 32, 56]')
+    parser.add_argument('--dataset', type=str, default='cifar100',
+                        help='cifar10 or cifar100')
     parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                         help='input batch size for training (default: 128)')
     parser.add_argument('--test-batch-size', type=int, default=128, metavar='N',
@@ -129,9 +132,7 @@ def initialize():
     # Logging Settings
     os.makedirs(args.log_dir, exist_ok=True)
     logfile = os.path.join(args.log_dir,
-        #'cifar10_{}_ep{}_bs{}_kfac{}_{}_gpu{}.log'.format(args.model, args.epochs, args.batch_size, args.kfac_update_freq, args.kfac_name, hvd.size()))
-        #'cifar10_{}_ep{}_bs{}_gpu{}_kfac{}_{}_{}.log'.format(args.model, args.epochs, args.batch_size, hvd.size(), args.kfac_update_freq, args.kfac_name, args.exclude_parts))
-        'cifar10_{}_ep{}_bs{}_gpu{}_kfac{}_{}_{}.log'.format(args.model, args.epochs, args.batch_size, backend.comm.size(), args.kfac_update_freq, args.kfac_name, args.exclude_parts))
+        '{}_{}_ep{}_bs{}_gpu{}_kfac{}_{}_{}.log'.format(args.dataset, args.model, args.epochs, args.batch_size, backend.comm.size(), args.kfac_update_freq, args.kfac_name, args.exclude_parts))
 
     hdlr = logging.FileHandler(logfile)
     hdlr.setFormatter(formatter)
@@ -160,10 +161,17 @@ def get_dataset(args):
         transforms.ToTensor(),
         transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])
 
-    train_dataset = datasets.CIFAR10(root=args.dir, train=True, 
+    if args.dataset == 'cifar10':
+        train_dataset = datasets.CIFAR10(root=args.dir, train=True, 
                                      download=False, transform=transform_train)
-    test_dataset = datasets.CIFAR10(root=args.dir, train=False,
+        test_dataset = datasets.CIFAR10(root=args.dir, train=False,
                                     download=False, transform=transform_test)
+    else:
+        train_dataset = datasets.CIFAR100(root=args.dir, train=True, 
+                                     download=False, transform=transform_train)
+        test_dataset = datasets.CIFAR100(root=args.dir, train=False,
+                                    download=False, transform=transform_test)
+
 
     # Use DistributedSampler to partition the training data.
     train_sampler = torch.utils.data.distributed.DistributedSampler(
@@ -183,21 +191,26 @@ def get_dataset(args):
 
 
 def get_model(args):
+    num_classes = 10 if args.dataset == 'cifar10' else 100
     # ResNet
     if args.model.lower() == "resnet20":
-        model = resnet.resnet20()
+        model = resnet.resnet20(num_classes=num_classes)
     elif args.model.lower() == "resnet32":
-        model = resnet.resnet32()
+        model = resnet.resnet32(num_classes=num_classes)
     elif args.model.lower() == "resnet44":
-        model = resnet.resnet44()
+        model = resnet.resnet44(num_classes=num_classes)
     elif args.model.lower() == "resnet56":
-        model = resnet.resnet56()
+        model = resnet.resnet56(num_classes=num_classes)
     elif args.model.lower() == "resnet110":
-        model = resnet.resnet110()
+        model = resnet.resnet110(num_classes=num_classes)
     elif args.model.lower() == "wrn28-10":
-        model = Wide_ResNet(28, 10, 0.3, 10)
+        model = Wide_ResNet(28, 10, 0.3, num_classes=num_classes)
     elif args.model.lower() == "wrn28-20":
-        model = Wide_ResNet(28, 20, 0.3, 10)
+        model = Wide_ResNet(28, 20, 0.3, num_classes=num_classes)
+    elif args.model.lower() == "vgg16":
+        model = VGG("VGG16", num_classes=num_classes)
+    elif args.model.lower() == "vgg19":
+        model = VGG("VGG19", num_classes=num_classes)
 
     if args.cuda:
         model.cuda()
@@ -263,6 +276,7 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, criterion, trai
     avg_time = 0.0
     display = 10
     iotimes=[];fwbwtimes=[];kfactimes=[];commtimes=[];uptimes=[]
+    ittimes=[]
 
     for batch_idx, (data, target) in enumerate(train_loader):
         stime = time.time()
@@ -306,15 +320,18 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, criterion, trai
         avg_time += (time.time()-stime)
             
         if (batch_idx + 1) % display == 0:
-            if False:
-            #if args.verbose:
+            #if False:
+            if args.verbose:
                 logger.info("[%d][%d] time: %.3f, speed: %.3f images/s" % (epoch, batch_idx, avg_time/display, args.batch_size/(avg_time/display)))
                 logger.info('Profiling: IO: %.3f, FW+BW: %.3f, COMM: %.3f, KFAC: %.3f, UPDAT: %.3f', np.mean(iotimes), np.mean(fwbwtimes), np.mean(commtimes), np.mean(kfactimes), np.mean(uptimes))
             iotimes=[];fwbwtimes=[];kfactimes=[];commtimes=[];uptimes=[]
+            ittimes.append(avg_time/display)
             avg_time = 0.0
 
-        #if batch_idx >= 60:
-        #    break
+        if batch_idx >= 60:
+            if args.verbose:
+                logger.info("Iteration time: mean %.3f, std: %.3f" % (np.mean(ittimes[1:]),np.std(ittimes[1:])))
+            break
 
     if args.verbose:
         logger.info("[%d] epoch train loss: %.4f, acc: %.3f" % (epoch, train_loss.avg.item(), 100*train_accuracy.avg.item()))
@@ -356,7 +373,7 @@ if __name__ == '__main__':
         train(epoch, model, optimizer, preconditioner, lr_scheduler, criterion, train_sampler, train_loader, args)
         #if args.verbose:
         #    logger.info("[%d] epoch train time: %.3f"%(epoch, time.time() - stime))
-        test(epoch, model, criterion, test_loader, args)
+        #test(epoch, model, criterion, test_loader, args)
 
     if args.verbose:
         logger.info("Total Training Time: %s", str(datetime.timedelta(seconds=time.time() - start)))

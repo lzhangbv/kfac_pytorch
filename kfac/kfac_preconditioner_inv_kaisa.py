@@ -7,12 +7,13 @@ import kfac.backend as backend  # hvd -> backend.comm
 
 from kfac.utils import (ComputeA, ComputeG)
 from kfac.utils import update_running_avg
-from kfac.utils import mat_inv
+from kfac.utils import mat_inv, mat_eig
 from kfac.kfac_preconditioner_inv import KFAC as KFAC_INV
 
 import logging
 logger = logging.getLogger()
 
+INVERSE = True
 
 class KFAC(KFAC_INV):
     """
@@ -38,7 +39,7 @@ class KFAC(KFAC_INV):
                  damping=0.001,
                  fac_update_freq=1,
                  kfac_update_freq=1,
-                 ngpu_per_node=4,
+                 ngpu_per_node=1,   # =nworkers if CO; =1 if MO
                  kl_clip=0.001,
                  factor_decay=0.95,
                  exclude_vocabulary_size=None,
@@ -106,16 +107,25 @@ class KFAC(KFAC_INV):
         for module in self.modules:
             rank_a, rank_g = self.module_ranks[module]
             if backend.comm.rank() == rank_a:
-                A = self._add_value_to_diagonal(self.m_A[module], self.damping)
-                self.m_inv_A[module] = mat_inv(A)
+                if INVERSE:
+                    A = self._add_value_to_diagonal(self.m_A[module], self.damping)
+                    self.m_inv_A[module] = mat_inv(A)
+                else:
+                    dA, QA = mat_eig(self.m_A[module])
+                    self.m_inv_A[module] = QA
+
             elif self.steps == 0 and backend.comm.rank() in self.get_intra_node_group(rank_a):
                 # initialize memory as inv_A=0 in other intra-node GPUs for broadcast
                 A = self.m_A[module]
                 self.m_inv_A[module] = A.new_zeros(A.shape)
 
             if backend.comm.rank() == rank_g:
-                G = self._add_value_to_diagonal(self.m_G[module], self.damping)
-                self.m_inv_G[module] = mat_inv(G)
+                if INVERSE:
+                    G = self._add_value_to_diagonal(self.m_G[module], self.damping)
+                    self.m_inv_G[module] = mat_inv(G)
+                else:
+                    dG, QG = mat_eig(self.m_G[module])
+                    self.m_inv_G[module] = QG
             elif self.steps == 0 and backend.comm.rank() in self.get_intra_node_group(rank_g):
                 # initialize memory as inv_G=0 in other intra-node GPUs for broadcast
                 G = self.m_G[module]

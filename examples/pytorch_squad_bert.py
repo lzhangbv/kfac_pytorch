@@ -445,13 +445,15 @@ def train(args, epoch, model, optimizer, preconditioner, train_sampler, train_lo
     train_sampler.set_epoch(epoch)
 
     train_loss = Metric('train_loss')
-    display = 50
-
+    display = 10 #50
+    avg_time = 0.0
+    ittimes = []
     for batch_idx, batch in enumerate(train_loader):
         if args.cuda:
             batch = tuple(t.cuda() for t in batch)
         optimizer.zero_grad()
         
+        stime = time.time()
         inputs = {
             "input_ids": batch[0],
             "attention_mask": batch[1],
@@ -476,14 +478,24 @@ def train(args, epoch, model, optimizer, preconditioner, train_sampler, train_lo
             optimizer.step()
         
         args.global_step += 1
+        avg_time += (time.time()-stime)
 
         if (batch_idx + 1) % display == 0:
             if args.verbose:
+                logger.info("[%d][%d] time: %.3f, speed: %.3f examples/s" % (epoch, batch_idx, avg_time/display, args.batch_size/(avg_time/display)))
                 logger.info("[%d] epoch [%d] iteration train loss: %.4f" % (epoch, batch_idx, train_loss.avg.item()))
                 train_loss = Metric('train_loss')
             if validate and hvd.rank() == 0: 
                 valid_loss = cal_validate_loss(model, valid_loader, args)
                 logger.info("[%d] epoch [%d] iteration valid loss: %.4f" % (epoch, batch_idx, valid_loss))
+            ittimes.append(avg_time/display)
+            avg_time = 0.0
+
+        if batch_idx >= 60:
+            if args.verbose:
+                logger.info("Iteration time: mean %.3f, std: %.3f" % (np.mean(ittimes[1:]),np.std(ittimes[1:])))
+            break
+
 
         if args.max_steps > 0 and args.global_step > args.max_steps:
             break
@@ -594,9 +606,9 @@ if __name__ == "__main__":
         train(args, epoch, model, optimizer, preconditioner, 
                 train_sampler, train_loader, valid_in_progress, valid_loader)
         
-        if eval_in_progress and hvd.rank() == 0:
-            results = cal_evaluate_F1_score(model, test_loader, test_inputs, args)
-            logger.info("Epoch [%d] F1 score: %.4f" % (epoch, results['f1']))
+        #if eval_in_progress and hvd.rank() == 0:
+        #    results = cal_evaluate_F1_score(model, test_loader, test_inputs, args)
+        #    logger.info("Epoch [%d] F1 score: %.4f" % (epoch, results['f1']))
         
         if args.max_steps > 0 and args.global_step > args.max_steps:
             break
@@ -604,6 +616,6 @@ if __name__ == "__main__":
     if args.verbose:
         logger.info("Total Training Time: %s", str(datetime.timedelta(seconds=time.time() - start)))
     
-    if not eval_in_progress and hvd.rank() == 0:
-        results = cal_evaluate_F1_score(model, test_loader, test_inputs, args)
-        logger.info("Evaluation exact match: %.4f, F1 score: %.4f" % (results['exact'], results['f1']))
+    #if not eval_in_progress and hvd.rank() == 0:
+    #    results = cal_evaluate_F1_score(model, test_loader, test_inputs, args)
+    #    logger.info("Evaluation exact match: %.4f, F1 score: %.4f" % (results['exact'], results['f1']))

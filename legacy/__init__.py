@@ -1,12 +1,12 @@
-from legacy.kfac_preconditioner_eigen import KFACParamScheduler
-from legacy.kfac_preconditioner_eigen import KFAC as KFAC_EIGEN
-from legacy.kfac_preconditioner_inv import KFAC as KFAC_INV
-from legacy.kfac_preconditioner_inv_nopar import KFAC as KFAC_INV_NOPAR
-from legacy.kfac_preconditioner_inv_opt import KFAC as KFAC_INV_OPT
-from legacy.kfac_preconditioner_inv_nordc import KFAC as KFAC_INV_NORDC
-from legacy.kfac_preconditioner_inv_rdc import KFAC as KFAC_INV_RDC
-from legacy.kfac_preconditioner_inv_rdc_ppl import KFAC as KFAC_INV_RDC_PPL
-
+#from legacy.kfac_preconditioner_eigen import KFACParamScheduler
+#from legacy.kfac_preconditioner_eigen import KFAC as KFAC_EIGEN
+#from legacy.kfac_preconditioner_inv import KFAC as KFAC_INV
+#from legacy.kfac_preconditioner_inv_nopar import KFAC as KFAC_INV_NOPAR
+#from legacy.kfac_preconditioner_inv_opt import KFAC as KFAC_INV_OPT
+#from legacy.kfac_preconditioner_inv_nordc import KFAC as KFAC_INV_NORDC
+#from legacy.kfac_preconditioner_inv_rdc import KFAC as KFAC_INV_RDC
+#from legacy.kfac_preconditioner_inv_rdc_ppl import KFAC as KFAC_INV_RDC_PPL
+"""
 KFAC = KFAC_INV
 
 kfac_mappers = {
@@ -22,3 +22,4 @@ kfac_mappers = {
 
 def get_kfac_module(kfac='eigen'):
     return kfac_mappers[kfac]
+"""

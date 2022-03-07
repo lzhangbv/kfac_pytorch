@@ -25,12 +25,14 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torch.utils.data.distributed
 from torch.optim.lr_scheduler import LambdaLR
+import torchvision
 from torchvision import datasets, transforms
 import horovod.torch as hvd
 import torch.distributed as dist
 from tqdm import tqdm
 from distutils.version import LooseVersion
 import imagenet_resnet as models
+import imagenet_inceptionv4 as inceptionv4
 from utils import *
 
 import kfac
@@ -241,6 +243,18 @@ def get_model(args):
         model = models.resnext50_32x4d()
     elif args.model.lower() == 'resnext101':
         model = models.resnext101_32x8d()
+    elif args.model.lower() == 'densenet121':
+        model = torchvision.models.densenet121(num_classes=1000,pretrained=False)
+    elif args.model.lower() == 'densenet201':
+        model = torchvision.models.densenet201(num_classes=1000,pretrained=False)
+    elif args.model.lower() == 'vgg16':
+        model = torchvision.models.vgg16(num_classes=1000,pretrained=False)
+    elif args.model.lower() == 'inceptionv3':
+        model = torchvision.models.inception_v3(num_classes=1000,pretrained=False)
+    elif args.model.lower() == 'inceptionv4':
+        model = inceptionv4.inceptionv4(num_classes=1000,pretrained=False)
+    elif args.model.lower() == 'mobilenetv2':
+        model = torchvision.models.mobilenet_v2()
     else:
         raise ValueError('Unknown model \'{}\''.format(args.model))
 
@@ -326,6 +340,7 @@ def train(epoch, model, optimizer, preconditioner, lr_schedules, lrs,
     #          disable=not args.verbose) as t:
     profiling=True
     iotimes = [];fwbwtimes=[];kfactimes=[];commtimes=[];uptimes=[]
+    ittimes = []
     if True:
         for batch_idx, (data, target) in enumerate(train_loader):
             stime = time.time()
@@ -372,8 +387,11 @@ def train(epoch, model, optimizer, preconditioner, lr_schedules, lrs,
                     logger.info("[%d][%d] loss: %.4f, acc: %.2f, time: %.3f, speed: %.3f images/s" % (epoch, batch_idx, train_loss.avg.item(), 100*train_accuracy.avg.item(), avg_time/display, args.batch_size/(avg_time/display)))
                     logger.info('Profiling: IO: %.3f, FW+BW: %.3f, COMM: %.3f, KFAC: %.3f, STEP: %.3f', np.mean(iotimes), np.mean(fwbwtimes), np.mean(commtimes), np.mean(kfactimes), np.mean(uptimes))
                     iotimes = [];fwbwtimes=[];kfactimes=[];commtimes=[]
+                ittimes.append(avg_time/display)
                 avg_time = 0.0
             if batch_idx > 120:
+                if args.verbose:
+                    logger.info("Iteration time: mean %.3f, std: %.3f" % (np.mean(ittimes[1:]),np.std(ittimes[1:])))
                 break
         if args.verbose:
             logger.info("[%d] epoch train loss: %.4f, acc: %.3f" % (epoch, train_loss.avg.item(), 100*train_accuracy.avg.item()))
@@ -433,7 +451,7 @@ if __name__ == '__main__':
     for epoch in range(args.resume_from_epoch, args.epochs):
         train(epoch, model, opt, preconditioner, lr_schedules, lrs,
              loss_func, train_sampler, train_loader, args)
-        validate(epoch, model, loss_func, val_loader, args)
+        #validate(epoch, model, loss_func, val_loader, args)
         #save_checkpoint(model, opt, args.checkpoint_format, epoch)
 
     if args.verbose:
