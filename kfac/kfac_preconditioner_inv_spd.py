@@ -19,7 +19,7 @@ from kfac.utils import mat_inv, mat_eig
 #import tcmm
 #import torchsso
 
-INVERSE = True
+INVERSE = False
 Threshold = 100  # Eigen: 100; Inv-CNNs: 1000; INV-Transformers: 100;
 
 logger = logging.getLogger()

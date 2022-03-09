@@ -13,7 +13,7 @@ from kfac.kfac_preconditioner_inv import KFAC as KFAC_INV
 import logging
 logger = logging.getLogger()
 
-INVERSE = True
+INVERSE = False
 
 class KFAC(KFAC_INV):
     """

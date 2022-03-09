@@ -1,16 +1,16 @@
 horovod=1
-nworkers=64
+nworkers="${nworkers:-16}"
 rdma=1
 node_rank=1
 node_count=16
 
 
 ##### Iteration Time #####
-dnn=resnet50
-batch_size=32
+#dnn=resnet50
+#batch_size=32
 
-#dnn=densenet201
-#batch_size=16
+dnn=densenet201
+batch_size=16
 
 #dnn=inceptionv4
 #batch_size=16
@@ -25,7 +25,7 @@ fac=1
 
 # kaisa
 kfac_name=inverse_kaisa
-#kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs ./train_imagenet.sh
+kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs ./train_imagenet.sh
 #exclude_parts=CommunicateInverse kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs ./train_imagenet.sh
 #exclude_parts=CommunicateInverse,ComputeInverse kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs ./train_imagenet.sh
 #exclude_parts=CommunicateInverse,ComputeInverse,CommunicateFactor kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs ./train_imagenet.sh
@@ -33,13 +33,15 @@ kfac_name=inverse_kaisa
 
 # spd-kfac
 kfac_name=inverse_spd
-#kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs ./train_imagenet.sh
+batch_size=15
+kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs ./train_imagenet.sh
 #exclude_parts=CommunicateInverse kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs ./train_imagenet.sh
 #exclude_parts=CommunicateInverse,ComputeInverse kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs ./train_imagenet.sh
 
 # dp-kfac
-#kfac_name=eigen_dp
-kfac_name=inverse_dp
-#kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs ./train_imagenet.sh
+kfac_name=eigen_dp
+#kfac_name=inverse_dp
+batch_size=16
+kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs ./train_imagenet.sh
 #exclude_parts=CommunicateInverse kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs ./train_imagenet.sh
 #exclude_parts=CommunicateInverse,ComputeInverse kfac=$kfac fac=$fac kfac_name=$kfac_name horovod=$horovod nworkers=$nworkers rdma=$rdma node_rank=$node_rank node_count=$node_count dnn=$dnn batch_size=$batch_size epochs=$epochs ./train_imagenet.sh

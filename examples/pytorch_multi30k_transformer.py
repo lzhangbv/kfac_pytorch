@@ -164,10 +164,13 @@ def initialize():
 
     cudnn.benchmark = True
 
-    if args.use_adam:
-        logfile = './logs/debug_multi30k_transformer{}_epoch{}_warmup{}_lr{}_kfac{}_gpu{}_bs{}_{}.log'.format(args.n_layers, args.epoch, args.n_warmup_steps, args.lr_mul, args.kfac_update_freq, backend.comm.size(), args.batch_size, args.kfac_name)
+    if args.kfac_update_freq:
+        alg = args.kfac_name
     else:
-        logfile = './logs/debug_multi30k_transformer{}_epoch{}_lr{}_decay{}_kfac{}_gpu{}_bs{}_{}.log'.format(args.n_layers, args.epoch, args.base_lr, args.lr_decay, args.kfac_update_freq, backend.comm.size(), args.batch_size, args.kfac_name)
+        alg = 'adam' if args.use_adam else 'sgd'
+
+    logfile = './logs/multi30k_transformer{}_epoch{}_gpu{}_bs{}_kfac{}_{}.log'.format(args.n_layers, args.epoch, backend.comm.size(), args.batch_size, args.kfac_update_freq, alg)
+
     hdlr = logging.FileHandler(logfile)
     hdlr.setFormatter(formatter)
     logger.addHandler(hdlr) 
@@ -413,8 +416,8 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, train_iterator,
 
         #if False:
         if (batch_idx + 1) % display == 0:
-            if args.verbose:
-                logger.info("[%d][%d] time: %.3f, speed: %.3f samples/s" % (epoch, batch_idx, avg_time/display, args.batch_size/(avg_time/display)))
+            #if args.verbose:
+            #    logger.info("[%d][%d] time: %.3f, speed: %.3f samples/s" % (epoch, batch_idx, avg_time/display, args.batch_size/(avg_time/display)))
             ittimes.append(avg_time/display)
             avg_time = 0.0
 
@@ -424,9 +427,9 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, train_iterator,
 
     if not args.use_adam:
         lr_scheduler.step() # schedule learning rate at each epoch
-    else:
-        if args.verbose:
-            logger.info("[%d] epoch [%d] iteration" % (epoch, lr_scheduler.n_steps))
+    #else:
+    #    if args.verbose:
+    #        logger.info("[%d] epoch [%d] iteration" % (epoch, lr_scheduler.n_steps))
     return np.mean(ittimes[1:])
 
 
@@ -500,16 +503,17 @@ if __name__ ==  '__main__':
     for epoch in range(args.epoch):
         iter_time = train(epoch, model, optimizer, preconditioner, lr_scheduler, train_iterator, args)
         ittimes.append(iter_time)
-        #validate(epoch, model, val_iterator, args)
+        validate(epoch, model, val_iterator, args)
         
         # cal average iteration time with first 5 epochs
-        if epoch >= 4:
-            if args.verbose:
-                logger.info("Iteration time: mean %.3f, std: %.3f" % (np.mean(ittimes),np.std(ittimes)))
-            break
+        #if epoch >= 4:
+        #    if args.verbose:
+        #        logger.info("Iteration time: mean %.3f, std: %.3f" % (np.mean(ittimes),np.std(ittimes)))
+        #    break
             
-
-    #calculate_bleu(epoch, translator, val_dataset, args)
+        # calculate bleu score
+        if (epoch+1) % 100 == 0:
+            calculate_bleu(epoch, translator, val_dataset, args)
 
     if args.verbose:
         logger.info("\nTraining time: %s", str(timedelta(seconds=time.time() - start)))

@@ -445,8 +445,9 @@ def train(args, epoch, model, optimizer, preconditioner, train_sampler, train_lo
     train_sampler.set_epoch(epoch)
 
     train_loss = Metric('train_loss')
-    display = 10 #50
+    display = 10
     avg_time = 0.0
+    tot_time = 0.0
     ittimes = []
     for batch_idx, batch in enumerate(train_loader):
         if args.cuda:
@@ -481,21 +482,27 @@ def train(args, epoch, model, optimizer, preconditioner, train_sampler, train_lo
         avg_time += (time.time()-stime)
 
         if (batch_idx + 1) % display == 0:
-            if args.verbose:
+            if False:
+            #if args.verbose:
                 logger.info("[%d][%d] time: %.3f, speed: %.3f examples/s" % (epoch, batch_idx, avg_time/display, args.batch_size/(avg_time/display)))
                 logger.info("[%d] epoch [%d] iteration train loss: %.4f" % (epoch, batch_idx, train_loss.avg.item()))
                 train_loss = Metric('train_loss')
-            if validate and hvd.rank() == 0: 
+            
+            if validate and hvd.rank() == 0:
                 valid_loss = cal_validate_loss(model, valid_loader, args)
-                logger.info("[%d] epoch [%d] iteration valid loss: %.4f" % (epoch, batch_idx, valid_loss))
-            ittimes.append(avg_time/display)
+                #logger.info("[%d] epoch [%d] iteration valid loss: %.4f" % (epoch, batch_idx, valid_loss))
+                tot_time += avg_time
+                logger.info("Total time: %.2f, validation loss: %.4f" % (tot_time, valid_loss))
+            
+            #ittimes.append(avg_time/display)
             avg_time = 0.0
 
-        if batch_idx >= 60:
-            if args.verbose:
-                logger.info("Iteration time: mean %.3f, std: %.3f" % (np.mean(ittimes[1:]),np.std(ittimes[1:])))
+        #if batch_idx >= 60:
+        #    if args.verbose:
+        #        logger.info("Iteration time: mean %.3f, std: %.3f" % (np.mean(ittimes[1:]),np.std(ittimes[1:])))
+        #    break
+        if tot_time > 200: #650: # ~training time for one-epoch SGD
             break
-
 
         if args.max_steps > 0 and args.global_step > args.max_steps:
             break
@@ -598,7 +605,7 @@ if __name__ == "__main__":
     train_sampler, train_loader, valid_loader, test_loader, test_inputs = get_dataset(args)
 
     model, optimizer, preconditioner = get_model(args)
-    valid_in_progress = False
+    valid_in_progress = True
     eval_in_progress = True
 
     start = time.time()
