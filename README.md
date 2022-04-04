@@ -1,12 +1,10 @@
 # PyTorch Distributed K-FAC Preconditioner
 
-[![DOI](https://zenodo.org/badge/240976400.svg)](https://zenodo.org/badge/latestdoi/240976400)
+Distributed K-FAC Preconditioner in PyTorch using [Horovod](https://github.com/horovod/horovod) for communication. 
 
-Distributed K-FAC Preconditioner in PyTorch using [Horovod](https://github.com/horovod/horovod) for communication. This is the code for the paper "[Convolutional Neural Network Training with Distributed K-FAC](https://arxiv.org/abs/2007.00784)." For `torch.distributed` support, see the [experimental](https://github.com/gpauloski/kfac_pytorch/tree/experimental) branch.
-
-The KFAC code was originally forked from Chaoqi Wang's [KFAC-PyTorch](https://github.com/alecwangcq/KFAC-Pytorch).
-The ResNet models for Cifar10 are from Yerlan Idelbayev's [pytorch_resnet_cifar10](https://github.com/akamaster/pytorch_resnet_cifar10).
-The CIFAR-10 and ImageNet-1k training scripts are modeled afer Horovod's example PyTorch training scripts.
+The KFAC code was originally forked from Greg Pauloski's [kfac-pytorch](https://github.com/gpauloski/kfac_pytorch).
+The CIFAR-10 and ImageNet-1k training scripts are modeled afer Horovod's example PyTorch training scripts. 
+The Transformer training script on Multi-30k was based on Yu-Hsiang Huang's [attention-is-all-you-need-pytorch](https://github.com/jadore801120/attention-is-all-you-need-pytorch), and the BERT training script on SQuAD was based on huggingface's [run-squad](https://github.com/huggingface/transformers/blob/main/examples/legacy/question-answering/run_squad.py).  
 
 ## Install
 
@@ -14,14 +12,14 @@ The CIFAR-10 and ImageNet-1k training scripts are modeled afer Horovod's example
 
 PyTorch and Horovod are required to use K-FAC.
 
-This code is validated to run with PyTorch v1.1, Horovod 0.19.0, CUDA 10.0/1, CUDNN 7.6.4, and NCCL 2.4.7.
+This code is validated to run with PyTorch-1.10.0, Horovod-0.21.0, CUDA-10.2, cuDNN-7.6, and NCCL-2.6.4. 
 
 ### Installation
 
 ```
-$ git clone https://github.com/gpauloski/kfac_pytorch.git
+$ git clone https://github.com/lzhangbv/kfac_pytorch.git
 $ cd kfac_pytorch
-$ pip install .
+$ pip install -r requirements.txt
 ```
 
 ## Usage
@@ -49,26 +47,24 @@ for i, (data, target) in enumerate(train_loader):
 
 Note that the K-FAC Preconditioner expects gradients to be averaged across workers before calling `preconditioner.step()` so we call `optimizer.synchronize()` before hand (Normally `optimizer.synchronize()` is not called until `optimizer.step()`). 
 
-## Example Scripts
+## Configure the cluster settings
 
-Example scripts for K-FAC + SGD training on CIFAR-10 and ImageNet-1k are provided.
+Before running the scripts, please carefully configure the configuration files in the directory of `configs`.
+- configs/cluster\*: configure the host files for MPI
+- configs/envs.conf: configure the cluster enviroments
 
-### CIFAR-10
-```
-$ mpiexec -hostfile /path/to/hostfile -N 4 python examples/pytorch_cifar10_resnet.py \
-      --lr 0.1 --epochs 100 --kfac-update-freq 10 --model resnet32 --lr-decay 35 75 90
-```
 
-### ImageNet-1k
+## Run experiments
+
 ```
-$ mpiexec -hostfile /path/to/hostfile -N 4 python examples/pytorch_imagenet_resnet.py \
-      --lr 0.0125 --epochs 55 --kfac-update-freq 10 --model resnet32 --lr-decay 25 35 40 45 50
+$ mkdir logs
+$ bash batch.sh
 ```
 
-See `python examples/pytorch_{dataset}_resnet.py --help` for a full list of hyper-parameters.
-Note: if `--kfac-update-freq 0`, the K-FAC Preconditioning is skipped entirely, i.e. training is just with normal SGD.
+See `python examples/pytorch_{dataset}_{model}.py --help` for a full list of hyper-parameters.
+Note: if `--kfac-update-freq 0`, the K-FAC Preconditioning is skipped entirely, i.e. training is just with SGD or Adam. 
 
-## Citation
+<!-- ## Citation
 
 ```
 @article{pauloski2020convolutional,
@@ -80,4 +76,4 @@ Note: if `--kfac-update-freq 0`, the K-FAC Preconditioning is skipped entirely, 
     archivePrefix={arXiv},
     primaryClass={cs.LG}
 }
-```
+``` -->
