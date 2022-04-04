@@ -35,12 +35,14 @@ import kfac.backend as backend #don't use a `from` import
 import horovod.torch as hvd
 import torch.distributed as dist
 
+SPEED = True
+
 def initialize():
     # Training Parameters
     parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Example')
     parser.add_argument('--model', type=str, default='resnet32',
                         help='ResNet model to use [20, 32, 56]')
-    parser.add_argument('--dataset', type=str, default='cifar100',
+    parser.add_argument('--dataset', type=str, default='cifar10',
                         help='cifar10 or cifar100')
     parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                         help='input batch size for training (default: 128)')
@@ -320,15 +322,14 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, criterion, trai
         avg_time += (time.time()-stime)
             
         if (batch_idx + 1) % display == 0:
-            #if False:
-            if args.verbose:
+            if args.verbose and SPEED:
                 logger.info("[%d][%d] time: %.3f, speed: %.3f images/s" % (epoch, batch_idx, avg_time/display, args.batch_size/(avg_time/display)))
                 logger.info('Profiling: IO: %.3f, FW+BW: %.3f, COMM: %.3f, KFAC: %.3f, UPDAT: %.3f', np.mean(iotimes), np.mean(fwbwtimes), np.mean(commtimes), np.mean(kfactimes), np.mean(uptimes))
             iotimes=[];fwbwtimes=[];kfactimes=[];commtimes=[];uptimes=[]
             ittimes.append(avg_time/display)
             avg_time = 0.0
 
-        if batch_idx >= 60:
+        if batch_idx >= 60 and SPEED:
             if args.verbose:
                 logger.info("Iteration time: mean %.3f, std: %.3f" % (np.mean(ittimes[1:]),np.std(ittimes[1:])))
             break
@@ -371,9 +372,10 @@ if __name__ == '__main__':
     for epoch in range(args.epochs):
         stime = time.time()
         train(epoch, model, optimizer, preconditioner, lr_scheduler, criterion, train_sampler, train_loader, args)
-        #if args.verbose:
-        #    logger.info("[%d] epoch train time: %.3f"%(epoch, time.time() - stime))
-        #test(epoch, model, criterion, test_loader, args)
+        if args.verbose:
+            logger.info("[%d] epoch train time: %.3f"%(epoch, time.time() - stime))
+        if not SPEED:
+            test(epoch, model, criterion, test_loader, args)
 
     if args.verbose:
         logger.info("Total Training Time: %s", str(datetime.timedelta(seconds=time.time() - start)))

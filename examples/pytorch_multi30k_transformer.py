@@ -27,6 +27,7 @@ formatter = logging.Formatter('%(asctime)s [%(filename)s:%(lineno)d] %(levelname
 strhdlr.setFormatter(formatter)
 logger.addHandler(strhdlr) 
 
+SPEED = True
 
 import torch
 import torch.backends.cudnn as cudnn
@@ -414,10 +415,9 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, train_iterator,
 
         avg_time += (time.time() - stime)
 
-        #if False:
         if (batch_idx + 1) % display == 0:
-            #if args.verbose:
-            #    logger.info("[%d][%d] time: %.3f, speed: %.3f samples/s" % (epoch, batch_idx, avg_time/display, args.batch_size/(avg_time/display)))
+            if args.verbose and SPEED:
+                logger.info("[%d][%d] time: %.3f, speed: %.3f samples/s" % (epoch, batch_idx, avg_time/display, args.batch_size/(avg_time/display)))
             ittimes.append(avg_time/display)
             avg_time = 0.0
 
@@ -503,13 +503,14 @@ if __name__ ==  '__main__':
     for epoch in range(args.epoch):
         iter_time = train(epoch, model, optimizer, preconditioner, lr_scheduler, train_iterator, args)
         ittimes.append(iter_time)
-        validate(epoch, model, val_iterator, args)
+        if not SPEED:
+            validate(epoch, model, val_iterator, args)
         
         # cal average iteration time with first 5 epochs
-        #if epoch >= 4:
-        #    if args.verbose:
-        #        logger.info("Iteration time: mean %.3f, std: %.3f" % (np.mean(ittimes),np.std(ittimes)))
-        #    break
+        if epoch >= 4 and SPEED:
+            if args.verbose:
+                logger.info("Iteration time: mean %.3f, std: %.3f" % (np.mean(ittimes),np.std(ittimes)))
+            break
             
         # calculate bleu score
         if (epoch+1) % 100 == 0:

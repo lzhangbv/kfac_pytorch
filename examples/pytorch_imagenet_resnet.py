@@ -18,6 +18,7 @@ formatter = logging.Formatter('%(asctime)s [%(filename)s:%(lineno)d] %(levelname
 strhdlr.setFormatter(formatter)
 logger.addHandler(strhdlr) 
 
+SPEED = True
 
 import torch
 import torch.backends.cudnn as cudnn
@@ -177,7 +178,7 @@ def initialize():
         args.log_writer = None
 
     #logfile = './logs/timing_imagenet_thres1024_{}_kfac{}_gpu{}_bs{}_{}_ep_{}.log'.format(args.model, args.kfac_update_freq, hvd.size(), args.batch_size, args.kfac_name, args.exclude_parts)
-    logfile = './logs/debug_imagenet_{}_kfac{}_gpu{}_bs{}_{}_ep_{}.log'.format(args.model, args.kfac_update_freq, backend.comm.size(), args.batch_size, args.kfac_name, args.exclude_parts)
+    logfile = './logs/imagenet_{}_kfac{}_gpu{}_bs{}_{}_ep_{}.log'.format(args.model, args.kfac_update_freq, backend.comm.size(), args.batch_size, args.kfac_name, args.exclude_parts)
     #logfile = './logs/inverse_imagenet_resnet50_kfac{}_gpu{}_bs{}.log'.format(args.kfac_update_freq, hvd.size(), args.batch_size)
     #logfile = './logs/imagenet_resnet50_kfac{}_gpu{}_bs{}.log'.format(args.kfac_update_freq, hvd.size(), args.batch_size)
     #logfile = './logs/sparse_imagenet_resnet50_kfac{}_gpu{}_bs{}.log'.format(args.kfac_update_freq, hvd.size(), args.batch_size)
@@ -383,13 +384,13 @@ def train(epoch, model, optimizer, preconditioner, lr_schedules, lrs,
             uptimes.append(updatetime-kfactime)
             avg_time += (time.time()-stime)
             if batch_idx > 0 and batch_idx % display == 0:
-                if args.verbose:
+                if args.verbose and SPEED:
                     logger.info("[%d][%d] loss: %.4f, acc: %.2f, time: %.3f, speed: %.3f images/s" % (epoch, batch_idx, train_loss.avg.item(), 100*train_accuracy.avg.item(), avg_time/display, args.batch_size/(avg_time/display)))
                     logger.info('Profiling: IO: %.3f, FW+BW: %.3f, COMM: %.3f, KFAC: %.3f, STEP: %.3f', np.mean(iotimes), np.mean(fwbwtimes), np.mean(commtimes), np.mean(kfactimes), np.mean(uptimes))
                     iotimes = [];fwbwtimes=[];kfactimes=[];commtimes=[]
                 ittimes.append(avg_time/display)
                 avg_time = 0.0
-            if batch_idx > 120:
+            if batch_idx > 120 and SPEED:
                 if args.verbose:
                     logger.info("Iteration time: mean %.3f, std: %.3f" % (np.mean(ittimes[1:]),np.std(ittimes[1:])))
                 break
@@ -451,8 +452,9 @@ if __name__ == '__main__':
     for epoch in range(args.resume_from_epoch, args.epochs):
         train(epoch, model, opt, preconditioner, lr_schedules, lrs,
              loss_func, train_sampler, train_loader, args)
-        #validate(epoch, model, loss_func, val_loader, args)
-        #save_checkpoint(model, opt, args.checkpoint_format, epoch)
+        if not SPEED:
+            validate(epoch, model, loss_func, val_loader, args)
+            #save_checkpoint(model, opt, args.checkpoint_format, epoch)
 
     if args.verbose:
         logger.info("\nTraining time: %s", str(timedelta(seconds=time.time() - start)))
