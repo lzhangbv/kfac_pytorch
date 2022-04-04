@@ -3,28 +3,30 @@
 nworkers="${nworkers:-8}"
 batch_size=4
 eval_batch_size=8
-#lr=0.00003
-lr=0.00002
 weight_decay=0.0 #5e-5
 
 ##### Convergence #####
-epochs=1 #3
+epochs=3
 steps=0
 
 # SGD
-nworkers=$nworkers kfac=0 lr=$lr use_adamw=0 epochs=$epochs steps=$steps bash train_squad.sh
+#lr=0.00002
+#nworkers=$nworkers kfac=0 lr=$lr use_adamw=0 epochs=$epochs steps=$steps bash train_squad.sh
 #nworkers=$nworkers kfac=0 lr=$lr use_adamw=0 epochs=6 steps=$steps bash train_squad.sh
 
 # AdamW or Adam
+lr=0.000005
 #nworkers=$nworkers kfac=0 lr=$lr use_adamw=1 epochs=$epochs steps=$steps bash train_squad.sh
+nworkers=$nworkers kfac=0 lr=$lr use_adamw=1 epochs=6 steps=$steps bash train_squad.sh
+nworkers=$nworkers kfac=0 lr=$lr use_adamw=1 epochs=6 steps=$steps bash train_squad.sh
+nworkers=$nworkers kfac=0 lr=$lr use_adamw=1 epochs=6 steps=$steps bash train_squad.sh
 
 # K-FAC
-kfac=1
-fac=1
+kfac=10
+fac=10
 kfac_name=eigen
 stat_decay=0.05
 damping=0.05
-lr=0.000005
 #nworkers=$nworkers kfac=$kfac fac=$fac kfac_name=$kfac_name lr=$lr weight_decay=$weight_decay damping=$damping stat_decay=$stat_decay epochs=$epochs steps=$steps bash train_squad.sh
 
 kfac_name=eigen_dp
