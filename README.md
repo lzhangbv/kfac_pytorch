@@ -1,4 +1,4 @@
-# PyTorch Distributed K-FAC Preconditioner
+# Artifact for DP-KFAC SC 2022
 
 Distributed K-FAC Preconditioner in PyTorch using [Horovod](https://github.com/horovod/horovod) for communication. 
 

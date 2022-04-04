@@ -37,6 +37,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+SPEED = True
 
 # for bert
 from transformers import (
@@ -255,7 +256,7 @@ def initialize():
         alg = 'adamw' if args.use_adamw else 'sgd'
     
     logfile = os.path.join(args.log_dir,
-        'debug_squad_{}_ep{}_bs{}_gpu{}_kfac{}_{}.log'.format(args.model_type, 
+        'squad_{}_ep{}_bs{}_gpu{}_kfac{}_{}.log'.format(args.model_type, 
         args.num_train_epochs, args.per_gpu_train_batch_size, hvd.size(), 
         args.kfac_update_freq, alg))
 
@@ -445,7 +446,7 @@ def train(args, epoch, model, optimizer, preconditioner, train_sampler, train_lo
     train_sampler.set_epoch(epoch)
 
     train_loss = Metric('train_loss')
-    display = 50
+    display = 10
     avg_time = 0.0
     tot_time = 0.0
     ittimes = []
@@ -483,7 +484,8 @@ def train(args, epoch, model, optimizer, preconditioner, train_sampler, train_lo
 
         if (batch_idx + 1) % display == 0:
             if args.verbose:
-                #logger.info("[%d][%d] time: %.3f, speed: %.3f examples/s" % (epoch, batch_idx, avg_time/display, args.batch_size/(avg_time/display)))
+                if SPEED:
+                    logger.info("[%d][%d] time: %.3f, speed: %.3f examples/s" % (epoch, batch_idx, avg_time/display, args.batch_size/(avg_time/display)))
                 logger.info("[%d] epoch [%d] iteration train loss: %.4f" % (epoch, batch_idx, train_loss.avg.item()))
                 train_loss = Metric('train_loss')
             
@@ -493,13 +495,13 @@ def train(args, epoch, model, optimizer, preconditioner, train_sampler, train_lo
                 tot_time += avg_time
                 #logger.info("Total time: %.2f, validation loss: %.4f" % (tot_time, valid_loss))
             
-            #ittimes.append(avg_time/display)
+            ittimes.append(avg_time/display)
             avg_time = 0.0
 
-        #if batch_idx >= 60: # for average iteration time
-        #    if args.verbose:
-        #        logger.info("Iteration time: mean %.3f, std: %.3f" % (np.mean(ittimes[1:]),np.std(ittimes[1:])))
-        #    break
+        if batch_idx >= 60 and SPEED: # for average iteration time
+            if args.verbose:
+                logger.info("Iteration time: mean %.3f, std: %.3f" % (np.mean(ittimes[1:]),np.std(ittimes[1:])))
+            break
         
         #if tot_time > 200: # for early optimization comparison
         #    break

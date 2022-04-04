@@ -9,34 +9,26 @@ lr_mul="${lr_mul:-0.5}"
 warmup="${warmup:-4000}"
 
 base_lr="${base_lr:-0.000001}"
-lr_decay="${lr_decay:-200}"
+lr_decay="${lr_decay:-400}"
 warmup_epochs="${warmup_epochs:-0}"
 
 scale_emb_or_prj="${scale_emb_or_prj:-emb}"
-n_layers="${n_layers:-6}"
+n_layers="${n_layers:-2}"
 
-kfac="${kfac:-1}"
-fac="${fac:-1}"
-kfac_name="${kfac_name:-inverse_dp}"
+kfac="${kfac:-5}"
+fac="${fac:-5}"
+kfac_name="${kfac_name:-eigen_dp}"
 stat_decay="${stat_decay:-0.95}"
-damping="${damping:-0.003}"
+damping="${damping:-0.001}"
 exclude_parts="${exclude_parts:-''}"
 
-horovod="${horovod:-0}"
+horovod="${horovod:-1}"
 params="--horovod $horovod --epoch $epochs --batch-size $batch_size  --lr-mul $lr_mul --n-warmup-steps $warmup --base-lr $base_lr --warmup-epochs $warmup_epochs --lr-decay $lr_decay --kfac-update-freq $kfac --kfac-cov-update-freq $fac --stat-decay $stat_decay --damping $damping --kfac-name $kfac_name --exclude-parts ${exclude_parts} --data-pkl data/m30k_deen_shr.pkl --label-smoothing --proj-share-weight --scale-emb-or-prj $scale_emb_or_prj --n-layers $n_layers --use-adam $use_adam"
 
 # multi-node multi-gpu settings
-ngpu_per_node="${ngpu_per_node:-4}"
-node_count="${node_count:-2}"
-node_rank="${node_rank:-1}"
-
 nworkers="${nworkers:-8}"
 rdma="${rdma:-1}"
 
 script=examples/pytorch_multi30k_transformer.py
 
-if [ "$horovod" = "1" ]; then
 nworkers=$nworkers rdma=$rdma script=$script params=$params bash launch_horovod.sh
-else
-ngpu_per_node=$ngpu_per_node node_count=$node_count node_rank=$node_rank script=$script params=$params bash launch_torch.sh
-fi
