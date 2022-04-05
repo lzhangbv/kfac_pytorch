@@ -3,7 +3,7 @@
 Distributed K-FAC Preconditioner in PyTorch using [Horovod](https://github.com/horovod/horovod) for communication. 
 
 The KFAC code was originally forked from Greg Pauloski's [kfac-pytorch](https://github.com/gpauloski/kfac_pytorch).
-The CIFAR-10 and ImageNet-1k training scripts are modeled afer Horovod's example PyTorch training scripts. 
+The CIFAR-10 and ImageNet-1k training scripts are modeled after Horovod's example PyTorch training scripts. 
 The Transformer training script on Multi-30k was based on Yu-Hsiang Huang's [attention-is-all-you-need-pytorch](https://github.com/jadore801120/attention-is-all-you-need-pytorch), and the BERT training script on SQuAD was based on huggingface's [run-squad](https://github.com/huggingface/transformers/blob/main/examples/legacy/question-answering/run_squad.py).  
 
 ## Install
@@ -24,14 +24,14 @@ $ pip install -r requirements.txt
 
 ## Usage
 
-The K-FAC Preconditioner can be easily added to exisiting training scripts that use `horovod.DistributedOptimizer()`.
+The DP_KFAC Preconditioner can be easily added to exisiting training scripts that use `horovod.DistributedOptimizer()`.
 
 ```Python
-from kfac import KFAC
+from kfac import DP_KFAC
 ... 
 optimizer = optim.SGD(model.parameters(), ...)
 optimizer = hvd.DistributedOptimizer(optimizer, ...)
-preconditioner = KFAC(model, ...)
+preconditioner = DP_KFAC(model, inv_type='eigen', ...)
 ... 
 for i, (data, target) in enumerate(train_loader):
     optimizer.zero_grad()
@@ -46,6 +46,18 @@ for i, (data, target) in enumerate(train_loader):
 ```
 
 Note that the K-FAC Preconditioner expects gradients to be averaged across workers before calling `preconditioner.step()` so we call `optimizer.synchronize()` before hand (Normally `optimizer.synchronize()` is not called until `optimizer.step()`). 
+
+For the convenience of experiments, we support choosing D-KFAC variants using kfac.get_kfac_module. 
+
+```Python
+import kfac
+...
+KFAC = kfac.get_kfac_module(kfac='eigen_dp')
+preconditioner = KFAC(model, ...)
+...
+```
+
+Note that the 'eigen_dp' and 'inverse_dp' represent DP_KFAC algorithms with eigen-decomposition and matrix-inversion computations in preconditioning, respectively, while the 'eigen' and 'inverse' represent original MPD_KFAC algorithms proposed in [CVPR 2019](https://arxiv.org/abs/1811.12019) and [SC 20](https://arxiv.org/abs/2007.00784). 
 
 ## Configure the cluster settings
 
