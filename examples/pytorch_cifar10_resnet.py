@@ -30,6 +30,7 @@ from cifar_vgg import VGG
 from utils import *
 
 import kfac
+from kfac import DP_KFAC
 import kfac.backend as backend #don't use a `from` import
 
 import horovod.torch as hvd
@@ -229,6 +230,7 @@ def get_model(args):
     if args.use_kfac:
         KFAC = kfac.get_kfac_module(args.kfac_name)
         preconditioner = KFAC(model, 
+        #preconditioner = DP_KFAC(model, inv_type='eigen',
                 lr=args.base_lr, 
                 factor_decay=args.stat_decay, 
                 damping=args.damping, 
