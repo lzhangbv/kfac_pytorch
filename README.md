@@ -1,9 +1,9 @@
 # Scalable K-FAC Training with Distributed Preconditioning
 
-Distributed K-FAC Preconditioner in PyTorch using [Horovod](https://github.com/horovod/horovod) for communication. 
+Distributed K-FAC Preconditioner in [PyTorch](https://github.com/pytorch/pytorch) and [Horovod](https://github.com/horovod/horovod). 
 
-The KFAC code was originally forked from Greg Pauloski's [kfac-pytorch](https://github.com/gpauloski/kfac_pytorch).
-The CIFAR-10 and ImageNet-1k training scripts are modeled after Horovod's example PyTorch training scripts. 
+The K-FAC code was originally forked from Greg Pauloski's [kfac-pytorch](https://github.com/gpauloski/kfac_pytorch).
+The CIFAR-10 and ImageNet-1k training scripts were borrowed from Horovod's example training scripts. 
 The Transformer training script on Multi-30k was based on Yu-Hsiang Huang's [attention-is-all-you-need-pytorch](https://github.com/jadore801120/attention-is-all-you-need-pytorch), and the BERT training script on SQuAD was based on huggingface's [run-squad](https://github.com/huggingface/transformers/blob/main/examples/legacy/question-answering/run_squad.py).  
 
 ## Install
@@ -20,7 +20,10 @@ This code is validated to run with PyTorch-1.10.0, Horovod-0.21.0, CUDA-10.2, cu
 $ git clone https://github.com/lzhangbv/kfac_pytorch.git
 $ cd kfac_pytorch
 $ pip install -r requirements.txt
+$ HOROVOD_GPU_OPERATIONS=NCCL pip install horovod
 ```
+
+If pip installation failed, please try to upgrade pip via `pip install --upgrade pip`. If Horovod installation with NCCL failed, please check the installation [guide](https://horovod.readthedocs.io/en/stable/install_include.html). 
 
 ## Usage
 
@@ -75,6 +78,8 @@ $ bash batch.sh
 
 See `python examples/pytorch_{dataset}_{model}.py --help` for a full list of hyper-parameters.
 Note: if `--kfac-update-freq 0`, the K-FAC Preconditioning is skipped entirely, i.e. training is just with SGD or Adam. 
+
+Make sure the datasets were prepared in correct  dirs (e.g., /datasets/cifar10) before running the experiments. We downloaded Cifar-10, Cifar-100, and Imagenet datasets via Torchvision's [Datasets](https://pytorch.org/vision/stable/datasets.html), preprocessed Multi-30k dataset with torchtext and spacy (see [usage](https://github.com/jadore801120/attention-is-all-you-need-pytorch)), and preprocessed SQuAD dataset with huggingface's [SquadV1Processor](https://huggingface.co/docs/transformers/main_classes/processors). 
 
 <!-- ## Citation
 
