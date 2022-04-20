@@ -8,6 +8,7 @@ script="${script:-}"
 params="${params:-}"
 
 # multi-node multi-gpu setting
+clusterprefix="${clusterprefix:-cluster}"
 nworkers="${nworkers:-4}"
 rdma="${rdma:-1}"
 
@@ -29,4 +30,4 @@ net_params="--mca pml ob1 --mca btl openib,vader,self --mca btl_openib_allow_ib 
     -x HOROVOD_CACHE_CAPACITY=0"
 fi
 
-$MPIPATH/bin/mpirun --oversubscribe --prefix $MPIPATH -np $nworkers -hostfile configs/cluster${nworkers} -bind-to none -map-by slot $net_params $PY $script $params
+$MPIPATH/bin/mpirun --oversubscribe --prefix $MPIPATH -np $nworkers -hostfile configs/$clusterprefix${nworkers} -bind-to none -map-by slot $net_params $PY $script $params

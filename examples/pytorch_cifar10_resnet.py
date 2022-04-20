@@ -30,13 +30,13 @@ from cifar_vgg import VGG
 from utils import *
 
 import kfac
-from kfac import DP_KFAC
+#from kfac import DP_KFAC
 import kfac.backend as backend #don't use a `from` import
 
 import horovod.torch as hvd
 import torch.distributed as dist
 
-SPEED = True
+SPEED = False
 
 def initialize():
     # Training Parameters
@@ -134,8 +134,10 @@ def initialize():
 
     # Logging Settings
     os.makedirs(args.log_dir, exist_ok=True)
+    #logfile = os.path.join(args.log_dir,
+    #    '{}_{}_ep{}_bs{}_gpu{}_kfac{}_{}_{}.log'.format(args.dataset, args.model, args.epochs, args.batch_size, backend.comm.size(), args.kfac_update_freq, args.kfac_name, args.exclude_parts))
     logfile = os.path.join(args.log_dir,
-        '{}_{}_ep{}_bs{}_gpu{}_kfac{}_{}_{}.log'.format(args.dataset, args.model, args.epochs, args.batch_size, backend.comm.size(), args.kfac_update_freq, args.kfac_name, args.exclude_parts))
+        '{}_{}_ep{}_bs{}_gpu{}_kfac{}_{}_warmup{}_damp{}_decay{}_clip{}.log'.format(args.dataset, args.model, args.epochs, args.batch_size, backend.comm.size(), args.kfac_update_freq, args.kfac_name, args.warmup_epochs, args.damping, args.stat_decay, args.kl_clip))
 
     hdlr = logging.FileHandler(logfile)
     hdlr.setFormatter(formatter)

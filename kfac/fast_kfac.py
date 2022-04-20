@@ -5,51 +5,14 @@ import numpy as np
 #import horovod.torch as hvd
 import kfac.backend as backend
 
+from kfac.utils import get_activation, get_deviation
 from distutils.version import LooseVersion
 import logging
 logger = logging.getLogger()
 
 
 class KFAC(optim.Optimizer):
-    """KFAC Distributed Gradient Preconditioner
-    
-    Usage:
-    --------------------------------------------------------
-    option 1: import horovod.torch as hvd
-    --------------------------------------------------------
-      optimizer = optim.SGD(model.parameters(), ...)
-      optimizer = hvd.DistributedOptimizer(optimizer, ...)
-      preconditioner = KFAC(model, ...)
-      ... 
-      for i, (data, target) in enumerate(train_loader):
-          optimizer.zero_grad()
-          output = model(data)
-          loss = criterion(output, target)
-          loss.backward()
-          optimizer.synchronize()
-          preconditioner.step()
-          with optimizer.skip_synchronize():
-              optimizer.step()
-      ...
-    --------------------------------------------------------
-    
-    --------------------------------------------------------
-    option 2: import torch.distributed as dist
-    --------------------------------------------------------
-      model = torch.nn.parallel.DistributedDataParallel(...)
-      optimizer = optim.SGD(model.parameters(), ...)
-      preconditioner = KFAC(model, ...)
-      ... 
-      for i, (data, target) in enumerate(train_loader):
-          optimizer.zero_grad()
-          output = model(data)
-          loss = criterion(output, target)
-          loss.backward()
-          preconditioner.step()
-          optimizer.step()
-      ...
-    --------------------------------------------------------
-
+    """Accelerate Distributed K-FAC with Sublinear Memory Cost
     Args:
       model (nn): Torch model
       lr (float): learning rate (default: 0.1)
@@ -104,14 +67,10 @@ class KFAC(optim.Optimizer):
 
         # dictionaries keyed by `module` to storing KFs, inverse KFs, etc
         self.m_a, self.m_g = {}, {}
-        self.m_A, self.m_G = {}, {}
-        self.m_inv_A, self.m_inv_G = {}, {}
-        self.m_precon_grad = {}
         
         # scheduling results
         self.module_ranks = None
 
-        self.eps = 1e-10  # for numerical stability
         self.steps = 0
 
     ### Register hooks
@@ -121,12 +80,25 @@ class KFAC(optim.Optimizer):
     def _forward_hook_event(self, module, input):
         """Default: hook for saving input (a)"""
         if self.hook_enabled and torch.is_grad_enabled() and self.steps % self.fac_update_freq == 0:
-            self.m_a[module] = input[0].data
+            with torch.no_grad():
+                new = get_activation(input[0].data, module)
+                if module not in self.m_a:
+                    self.m_a[module] = torch.zeros_like(new)
+                    self.m_a[module].copy_(new)
+                else:
+                    self.m_a[module].mul_(1-self.factor_decay).add_(new, alpha=self.factor_decay)
+
 
     def _backward_hook_event(self, module, grad_input, grad_output):
         """Default: hook for saving gradient w.r.t output (g)"""
         if self.hook_enabled and self.steps % self.fac_update_freq == 0:
-            self.m_g[module] = grad_output[0].data
+            with torch.no_grad():
+                new = get_deviation(grad_output[0].data, module)
+                if module not in self.m_g:
+                    self.m_g[module] = torch.zeros_like(new)
+                    self.m_g[module].copy_(new)
+                else:
+                    self.m_g[module].mul_(1-self.factor_decay).add_(new, alpha=self.factor_decay)
 
     def _register_module_hooks(self, model):
         """Register forard/backward hooks to supported modules"""
@@ -147,39 +119,76 @@ class KFAC(optim.Optimizer):
         if backend.comm.rank() == 0:
             logger.info("#register modules: %s", len(self.modules))
 
-    def schedule_module_ranks(self):
-        """Schedule ranks for each module to compute KFs"""
-        raise NotImplementedError
-
     ### KFs computations and communications
-    def _compute_factors(self):
-        """Compute KFs."""
-        raise NotImplementedError
-
     def _communicate_factors(self):
-        """Communicate KFs."""
-        raise NotImplementedError
+        """All-reduce the m_a and m_g instead. """
+        # Note: all-reduce after update running average
+        handles = []
+        for m in self.modules:
+            handles.append(backend.comm.allreduce_async_(self.m_a[m], op=backend.comm.Average))
+            handles.append(backend.comm.allreduce_async_(self.m_g[m], op=backend.comm.Average))
 
-    def _compute_inverse(self):
-        """Compute inverse KFs."""
-        raise NotImplementedError
+        for handle in handles:
+            backend.comm.synchronize(handle)
 
-    def _communicate_inverse(self):
-        """Communicate inverse KFs."""
-        raise NotImplementedError
-
-    def _compute_pred(self):
+	### Precondition gradients
+    def _precondition_grads(self):
         """Compute preconditioned gradients."""
-        raise NotImplementedError
+        vg_sum = 0
+        for module in self.modules:
+            # compute damped inverse KF
+            a = self.m_a[module]
+            inv_A = (torch.diag(a.new_ones(a.shape)) - (a.unsqueeze(1) * a.unsqueeze(0)).div_(self.damping + a @ a.T)).div_(self.damping)
+            g = self.m_g[module]
+            inv_G = (torch.diag(g.new_ones(g.shape)) - (g.unsqueeze(1) * g.unsqueeze(0)).div_(self.damping + g @ g.T)).div_(self.damping)
 
-    def _communicate_pred(self):
-        """Communicate preconditioned gradients."""
-        raise NotImplementedError
+            # compute preconditioned grad
+            grad = self._get_grad(module)
+            precon_grad = inv_G @ grad @ inv_A
+            del inv_A
+            del inv_G
 
-    def _update_grad_in_place(self):
-        """Update preconditioned gradients in place."""
-        raise NotImplementedError
-    
+            # weight and bias
+            if module.bias is not None:
+                v = [precon_grad[:, :-1], precon_grad[:, -1:]]
+                v[0] = v[0].view(module.weight.grad.data.size()) # weight
+                v[1] = v[1].view(module.bias.grad.data.size())   # bias
+            else:
+                v = [precon_grad.view(module.weight.grad.data.size())]
+
+            # copy the preconditioned gradients
+            module.weight.grad.data.copy_(v[0])
+            if module.bias is not None:
+                module.bias.grad.data.copy_(v[1])
+
+            # accumulate vg_sum
+            if self.kl_clip is not None:
+                vg_sum += (v[0] * module.weight.grad.data * self.lr ** 2).sum().item()
+                if module.bias is not None:
+                    vg_sum += (v[1] * module.bias.grad.data * self.lr ** 2).sum().item()
+            del precon_grad
+
+        # kl clip
+        if self.kl_clip is not None:
+            nu = min(1.0, math.sqrt(self.kl_clip / abs(vg_sum)))
+
+        for module in self.modules:
+            module.weight.grad.data.mul_(nu)
+            if module.bias is not None:
+                module.bias.grad.data.mul_(nu)
+
+    def _get_grad(self, module):
+        """Get gradient with shape [output_dim, input_dim] for module"""
+        if module.__class__.__name__ == 'Conv2d':
+            # n_filters * (in_c * kw * kh)
+            grad = module.weight.grad.data.view(module.weight.grad.data.size(0), -1)
+        else:
+            grad = module.weight.grad.data
+        if module.bias is not None:
+            grad = torch.cat([grad, module.bias.grad.data.view(-1, 1)], 1)
+        return grad    
+
+
     ### Perform one K-FAC step
     def step(self, closure=None, epoch=None):
         """Perform one K-FAC step"""
@@ -191,47 +200,15 @@ class KFAC(optim.Optimizer):
         self.fac_update_freq = group['fac_update_freq']
         self.kfac_update_freq = group['kfac_update_freq']
 
-        # (0) schedule module ranks
-        if self.module_ranks is None:
-            self.schedule_module_ranks()
+        if self.steps % self.fac_update_freq == 0 and backend.comm.size() > 1:
+        	self._communicate_factors()
+        
+        self._precondition_grads()
 
-        # (1) compute and communicate KFs
-        if self.steps % self.fac_update_freq == 0:
-            if not self.exclude_compute_factor:
-                self._compute_factors()
-            if not self.exclude_communicate_factor:
-                if backend.comm.size() > 1:
-                    self._communicate_factors()
-        
-        # (2) compute and/or communicate inverse KFs
-        if self.steps % self.kfac_update_freq == 0:
-            if not self.exclude_compute_inverse:
-                self._compute_inverse()
-            if not self.exclude_communicate_inverse and self.communicate_inverse_or_not:
-                if backend.comm.size() > 1:
-                   self._communicate_inverse()
-                    
-        # (3) compute and/or communicate preconditioned gradients
-        if not self.exclude_compute_inverse:
-            self._compute_pred()
-
-        if not self.exclude_communicate_inverse and not self.communicate_inverse_or_not:
-            if backend.comm.size() > 1:
-                self._communicate_pred()
-        
-        # (4) update preconditioned gradients in place
-        if not self.exclude_compute_inverse:
-            self._update_grad_in_place()
-        
         self.steps += 1
-
-        # clear the temporal memory iteratively
-        self.m_a, self.m_g = {}, {}
-
 
 class KFACParamScheduler():
     """Updates KFAC hyper-parameters at each epoch
-
     Args:
       kfac (KFAC): wrapped KFAC preconditioner
       damping_alpha (float): multiplicative factor of the damping (default: 1)
