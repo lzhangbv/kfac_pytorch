@@ -29,21 +29,27 @@ kfac_name=fast
 
 # Tuning the hyper-parameters
 
-epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.003 stat_decay=0.05 kl_clip=0.001 warmup_epochs=1 clusterprefix=gpu1cluster ./train_cifar10.sh &
-epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.003 stat_decay=0.05 kl_clip=0.001 warmup_epochs=5 clusterprefix=gpu2cluster ./train_cifar10.sh &
-epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.003 stat_decay=0.05 kl_clip=0.005 warmup_epochs=1 clusterprefix=gpu3cluster ./train_cifar10.sh &
-epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.003 stat_decay=0.05 kl_clip=0.005 warmup_epochs=5 clusterprefix=gpu4cluster ./train_cifar10.sh &
-epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.003 stat_decay=0.95 kl_clip=0.001 warmup_epochs=1 clusterprefix=gpu5cluster ./train_cifar10.sh &
-epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.003 stat_decay=0.95 kl_clip=0.001 warmup_epochs=5 clusterprefix=gpu6cluster ./train_cifar10.sh &
-epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.003 stat_decay=0.95 kl_clip=0.005 warmup_epochs=1 clusterprefix=gpu7cluster ./train_cifar10.sh &
-epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.003 stat_decay=0.95 kl_clip=0.005 warmup_epochs=5 clusterprefix=gpu8cluster ./train_cifar10.sh &
+#epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.003 stat_decay=0.05 kl_clip=0.001 warmup_epochs=1 clusterprefix=gpu1cluster ./train_cifar10.sh &
+#epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.003 stat_decay=0.05 kl_clip=0.001 warmup_epochs=5 clusterprefix=gpu2cluster ./train_cifar10.sh &
+#epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.003 stat_decay=0.05 kl_clip=0.005 warmup_epochs=1 clusterprefix=gpu3cluster ./train_cifar10.sh &
+#epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.003 stat_decay=0.05 kl_clip=0.005 warmup_epochs=5 clusterprefix=gpu4cluster ./train_cifar10.sh &
+#epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.003 stat_decay=0.95 kl_clip=0.001 warmup_epochs=1 clusterprefix=gpu5cluster ./train_cifar10.sh &
+#epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.003 stat_decay=0.95 kl_clip=0.001 warmup_epochs=5 clusterprefix=gpu6cluster ./train_cifar10.sh &
+#epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.003 stat_decay=0.95 kl_clip=0.005 warmup_epochs=1 clusterprefix=gpu7cluster ./train_cifar10.sh &
+#epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.003 stat_decay=0.95 kl_clip=0.005 warmup_epochs=5 clusterprefix=gpu8cluster ./train_cifar10.sh &
 
-epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.03 stat_decay=0.05 kl_clip=0.001 warmup_epochs=1 clusterprefix=gpu9cluster ./train_cifar10.sh &
-epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.03 stat_decay=0.05 kl_clip=0.001 warmup_epochs=5 clusterprefix=gpu10cluster ./train_cifar10.sh &
-epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.03 stat_decay=0.05 kl_clip=0.005 warmup_epochs=1 clusterprefix=gpu11cluster ./train_cifar10.sh &
-epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.03 stat_decay=0.05 kl_clip=0.005 warmup_epochs=5 clusterprefix=gpu12cluster ./train_cifar10.sh &
-epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.03 stat_decay=0.95 kl_clip=0.001 warmup_epochs=1 clusterprefix=gpu13cluster ./train_cifar10.sh &
-epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.03 stat_decay=0.95 kl_clip=0.001 warmup_epochs=5 clusterprefix=gpu14cluster ./train_cifar10.sh &
-epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.03 stat_decay=0.95 kl_clip=0.005 warmup_epochs=1 clusterprefix=gpu15cluster ./train_cifar10.sh &
-epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.03 stat_decay=0.95 kl_clip=0.005 warmup_epochs=5 clusterprefix=gpu16cluster ./train_cifar10.sh &
+#epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.03 stat_decay=0.05 kl_clip=0.001 warmup_epochs=1 clusterprefix=gpu9cluster ./train_cifar10.sh &
+#epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.03 stat_decay=0.05 kl_clip=0.001 warmup_epochs=5 clusterprefix=gpu10cluster ./train_cifar10.sh &
+#epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.03 stat_decay=0.05 kl_clip=0.005 warmup_epochs=1 clusterprefix=gpu11cluster ./train_cifar10.sh &
+#epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.03 stat_decay=0.05 kl_clip=0.005 warmup_epochs=5 clusterprefix=gpu12cluster ./train_cifar10.sh &
+#epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.03 stat_decay=0.95 kl_clip=0.001 warmup_epochs=1 clusterprefix=gpu13cluster ./train_cifar10.sh &
+#epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.03 stat_decay=0.95 kl_clip=0.001 warmup_epochs=5 clusterprefix=gpu14cluster ./train_cifar10.sh &
+#epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.03 stat_decay=0.95 kl_clip=0.005 warmup_epochs=1 clusterprefix=gpu15cluster ./train_cifar10.sh &
+#epochs=100 dnn=resnet110 dataset=cifar10 batch_size=128 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.03 stat_decay=0.95 kl_clip=0.005 warmup_epochs=5 clusterprefix=gpu16cluster ./train_cifar10.sh &
 
+# The tuned hyper-paramters
+epochs=100 dnn=resnet110 dataset=cifar10 batch_size=256 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.03 stat_decay=0.95 kl_clip=0.005 warmup_epochs=1 clusterprefix=gpu2cluster ./train_cifar10.sh &
+epochs=100 dnn=resnet110 dataset=cifar10 batch_size=256 lr=0.1 nworkers=4 kfac_name=fast kfac=0 warmup_epochs=1 clusterprefix=gpu3cluster ./train_cifar10.sh &
+
+epochs=100 dnn=resnet110 dataset=cifar10 batch_size=512 lr=0.1 nworkers=4 kfac_name=fast kfac=1 fac=1 damping=0.03 stat_decay=0.95 kl_clip=0.005 warmup_epochs=1 clusterprefix=gpu4cluster ./train_cifar10.sh &
+epochs=100 dnn=resnet110 dataset=cifar10 batch_size=512 lr=0.1 nworkers=4 kfac_name=fast kfac=0 warmup_epochs=1 clusterprefix=gpu5cluster ./train_cifar10.sh &

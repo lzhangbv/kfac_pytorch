@@ -7,6 +7,7 @@ batch_size="${batch_size:-128}"
 base_lr="${base_lr:-0.1}"
 epochs="${epochs:-100}"
 warmup_epochs="${warmup_epochs:-1}"
+momentum="${momentum:-0.9}"
 clusterprefix="${clusterprefix:-cluster}"
 
 if [ "$epochs" = "165" ]; then
@@ -25,7 +26,7 @@ damping="${damping:-0.003}"
 kl_clip="${kl_clip:-0.001}"
 
 horovod="${horovod:-1}"
-params="--horovod $horovod --dataset $dataset --dir /datasets/cifar10 --model $dnn --batch-size $batch_size --base-lr $base_lr --epochs $epochs --warmup-epochs $warmup_epochs --kfac-update-freq $kfac --kfac-cov-update-freq $fac --lr-decay $lr_decay --stat-decay $stat_decay --damping $damping --kl-clip $kl_clip --kfac-name $kfac_name --exclude-parts ${exclude_parts}"
+params="--horovod $horovod --dataset $dataset --dir /datasets/cifar10 --model $dnn --batch-size $batch_size --base-lr $base_lr --epochs $epochs --warmup-epochs $warmup_epochs --momentum $momentum --kfac-update-freq $kfac --kfac-cov-update-freq $fac --lr-decay $lr_decay --stat-decay $stat_decay --damping $damping --kl-clip $kl_clip --kfac-name $kfac_name --exclude-parts ${exclude_parts}"
 
 nworkers="${nworkers:-4}"
 rdma="${rdma:-1}"

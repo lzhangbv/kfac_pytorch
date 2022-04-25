@@ -12,7 +12,7 @@ logger = logging.getLogger()
 
 
 class KFAC(optim.Optimizer):
-    """Accelerate Distributed K-FAC with Sublinear Memory Cost
+    """Experimental: Accelerate Distributed Shampoo
     Args:
       model (nn): Torch model
       lr (float): learning rate (default: 0.1)
@@ -75,32 +75,8 @@ class KFAC(optim.Optimizer):
 
         self.steps = 0
 
-    ### Register hooks
-    def set_hook_enabled(self, mode=True):
-        self.hook_enabled = mode
-
-    def _forward_hook_event(self, module, input):
-        """Default: hook for saving input (a)"""
-        if self.hook_enabled and torch.is_grad_enabled() and self.steps % self.fac_update_freq == 0:
-            with torch.no_grad():
-                new = get_activation(input[0].data[0:self.kfac_batch_size], module)
-                if module not in self.m_a:
-                    self.m_a[module] = new
-                else:
-                    self.m_a[module].mul_(self.factor_decay).add_(new, alpha=1-self.factor_decay)
-
-    def _backward_hook_event(self, module, grad_input, grad_output):
-        """Default: hook for saving gradient w.r.t output (g)"""
-        if self.hook_enabled and self.steps % self.fac_update_freq == 0:
-            with torch.no_grad():
-                new = get_deviation(grad_output[0].data[0:self.kfac_batch_size], module)
-                if module not in self.m_g:
-                    self.m_g[module] = new
-                else:
-                    self.m_g[module].mul_(self.factor_decay).add_(new, alpha=1-self.factor_decay)
-
     def _register_module_hooks(self, model):
-        """Register forard/backward hooks to supported modules"""
+        """Register supported modules"""
         supported_modules = {'Linear', 'Conv2d'}
         name_idx = 0
         for module in model.modules():
@@ -109,83 +85,35 @@ class KFAC(optim.Optimizer):
                 if self.exclude_vocabulary_size is not None and classname == 'Linear' and module.out_features == self.exclude_vocabulary_size:
                     continue # exclude the pre-softmax linear layer in the Transformer model
                 self.modules.append(module)
-                module.register_forward_pre_hook(self._forward_hook_event)
-                #module.register_backward_hook(self._backward_hook_event)  # used in pytorch1.4, and pytorch1.8 (full_backward_hook is not fired when its grad_input is None)
-                module.register_full_backward_hook(self._backward_hook_event)  # used in pytorch1.10
                 module_name = 'module_name_%s_%d' % (classname, name_idx)
                 self.module_names.append(module_name)
                 name_idx += 1
         if backend.comm.rank() == 0:
             logger.info("#register modules: %s", len(self.modules))
 
-    ### KFs computations and communications
-    def _communicate_factors(self):
-        """All-reduce the m_a and m_g instead. """
-        # Note: all-reduce after update running average
-        handles = []
-        for m in self.modules:
-            handles.append(backend.comm.allreduce_async_(self.m_a[m], op=backend.comm.Average))
-            handles.append(backend.comm.allreduce_async_(self.m_g[m], op=backend.comm.Average))
 
-        for handle in handles:
-            backend.comm.synchronize(handle)
-
-
-	### Precondition gradients
     def _precondition_grads(self):
-        """Compute preconditioned gradients."""
+        """Compute preconditioned gradients with shampoo, i.e., L^-1 G R^-1."""
+        # however, in shampoo, the exact update formula is L^-1/4 G R^-1/4. 
         vg_sum = 0
         for module in self.modules:
-            # compute damped inverse KF
-            a = self.m_a[module]
-            inv_A = (torch.diag(a.new_ones(a.shape)) - (a.unsqueeze(1) * a.unsqueeze(0)).div_(self.damping + a @ a.T)).div_(self.damping)
-            g = self.m_g[module]
-            inv_G = (torch.diag(g.new_ones(g.shape)) - (g.unsqueeze(1) * g.unsqueeze(0)).div_(self.damping + g @ g.T)).div_(self.damping)
-
-            # compute preconditioned grad
+            # get grad: dim_out * dim_in
             grad = self._get_grad(module)
-            precon_grad = inv_G @ grad @ inv_A
-            del inv_A
-            del inv_G
+            g_new = torch.mean(grad, dim=1).view(-1, 1)
+            a_new = torch.mean(grad, dim=0).view(-1, 1)
 
-            # weight and bias
-            if module.bias is not None:
-                v = [precon_grad[:, :-1], precon_grad[:, -1:]]
-                v[0] = v[0].view(module.weight.grad.data.size()) # weight
-                v[1] = v[1].view(module.bias.grad.data.size())   # bias
+            if module not in self.m_a:
+                self.m_a[module] = a_new
             else:
-                v = [precon_grad.view(module.weight.grad.data.size())]
+                self.m_a[module].mul_(self.factor_decay).add_(a_new, alpha=1-self.factor_decay)
+            if module not in self.m_g:
+                self.m_g[module] = g_new
+            else:
+                self.m_g[module].mul_(self.factor_decay).add_(g_new, alpha=1-self.factor_decay)
 
-            # copy the preconditioned gradients
-            module.weight.grad.data.copy_(v[0])
-            if module.bias is not None:
-                module.bias.grad.data.copy_(v[1])
+            ma = self.m_a[module]
+            mg = self.m_g[module]
 
-            # accumulate vg_sum (to be checked: how to do clip for preconditioned gradients)
-            if self.kl_clip is not None:
-                vg_sum += (v[0] * module.weight.grad.data * self.lr ** 2).sum().item()
-                if module.bias is not None:
-                    vg_sum += (v[1] * module.bias.grad.data * self.lr ** 2).sum().item()
-            del precon_grad
-
-        # kl clip
-        if self.kl_clip is not None:
-            nu = min(1.0, math.sqrt(self.kl_clip / abs(vg_sum)))
-
-        for module in self.modules:
-            module.weight.grad.data.mul_(nu)
-            if module.bias is not None:
-                module.bias.grad.data.mul_(nu)
-
-
-    def _precondition_grads_fast(self):
-        """Compute preconditioned gradients via matrix-vector production."""
-        vg_sum = 0
-        for module in self.modules:
-            # get ma, mg, grad
-            ma = self.m_a[module].view(-1, 1)
-            mg = self.m_g[module].view(-1, 1)
-            grad = self._get_grad(module)
             
             # compute intermediate states
             a = (ma.T @ ma).item() + self.damping
@@ -243,10 +171,10 @@ class KFAC(optim.Optimizer):
         return grad    
 
 
-    ### Perform one K-FAC step
+    ### Perform one Shampoo step
     @torch.no_grad()
     def step(self, closure=None, epoch=None):
-        """Perform one K-FAC step"""
+        """Perform one Shampoo step"""
 
         # update params, used for compatibilty with `KFACParamScheduler`
         group = self.param_groups[0]
@@ -255,12 +183,7 @@ class KFAC(optim.Optimizer):
         self.fac_update_freq = group['fac_update_freq']
         self.kfac_update_freq = group['kfac_update_freq']
 
-        if self.steps % self.fac_update_freq == 0 and backend.comm.size() > 1:
-        	self._communicate_factors()
-        
-        #self._precondition_grads()
-        self._precondition_grads_fast()
-
+        self._precondition_grads()
         self.steps += 1
 
 class KFACParamScheduler():

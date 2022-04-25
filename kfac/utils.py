@@ -49,6 +49,9 @@ def get_activation(a, layer):
         return a
 
     elif isinstance(layer, nn.Conv2d):
+        # batch averag first
+        a = torch.mean(a, dim=0, keepdim=True)
+        # extract patch
         a = _extract_patches(a, layer.kernel_size, layer.stride, layer.padding)
         a = torch.mean(a, [0, 1, 2])
         if layer.bias is not None:

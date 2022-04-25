@@ -266,6 +266,7 @@ def get_model(args):
     args.base_lr = args.base_lr * backend.comm.size() * args.batches_per_allreduce
     optimizer = optim.SGD(model.parameters(), lr=args.base_lr,
                           momentum=args.momentum, weight_decay=args.wd)
+    #optimizer = optim.Adam(model.parameters(), lr=args.base_lr, betas=(0.9, 0.98), eps=1e-09)
 
     if args.kfac_update_freq > 0:
         KFAC = kfac.get_kfac_module(args.kfac_name)
@@ -383,6 +384,9 @@ def train(epoch, model, optimizer, preconditioner, lr_schedules, lrs,
             updatetime=time.time()
             uptimes.append(updatetime-kfactime)
             avg_time += (time.time()-stime)
+
+            #print("----------Memory Allocated after optimizer.step: %.1f (MB)----------" % (torch.cuda.max_memory_allocated()/1024/1024))
+            
             if batch_idx > 0 and batch_idx % display == 0:
                 if args.verbose and SPEED:
                     logger.info("[%d][%d] loss: %.4f, acc: %.2f, time: %.3f, speed: %.3f images/s" % (epoch, batch_idx, train_loss.avg.item(), 100*train_accuracy.avg.item(), avg_time/display, args.batch_size/(avg_time/display)))
