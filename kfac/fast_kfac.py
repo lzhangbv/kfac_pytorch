@@ -16,10 +16,7 @@ class KFAC(optim.Optimizer):
     Args:
       model (nn): Torch model
       lr (float): learning rate (default: 0.1)
-      damping (float): Tikhonov damping parameter (default: 0.001)
-      fac_update_freq (int): iterations between update KFs (default: 1)
-      kfac_update_freq (int): iterations between update inverse gradient (default: 1)
-      communicate_inverse_or_not (bool): choose to communicate inverse KFs or communicate preconditioned gradients
+      damping (float): Tikhonov damping parameter (default: 0.03)
       kl_clip (float): clipping parameter for gradient scaling
       factor_decay (float): running average coefficient for KFs
       exclude_vocabulary_size: exclude the pre-softmax linear layer in the Transformer
@@ -29,7 +26,7 @@ class KFAC(optim.Optimizer):
     def __init__(self,
                  model,
                  lr=0.1,
-                 damping=0.001,
+                 damping=0.03,
                  fac_update_freq=1,
                  kfac_update_freq=1,
                  kfac_batch_size=16,
@@ -177,7 +174,6 @@ class KFAC(optim.Optimizer):
             if module.bias is not None:
                 module.bias.grad.data.mul_(nu)
 
-
     def _precondition_grads_fast(self):
         """Compute preconditioned gradients via matrix-vector production."""
         vg_sum = 0
@@ -230,6 +226,52 @@ class KFAC(optim.Optimizer):
                 if module.bias is not None:
                     module.bias.grad.data.mul_(nu)
 
+    def _precondition_grads_faster(self):
+        """Compute preconditioned gradients via damping FIM"""
+        vg_sum = 0
+        for module in self.modules:
+            # get ma, mg, grad
+            ma = self.m_a[module].view(-1, 1)
+            mg = self.m_g[module].view(-1, 1)
+            grad = self._get_grad(module)
+            
+            # compute intermediate states
+            a = (ma.T @ ma).item()
+            g = (mg.T @ mg).item()
+            ag = (mg.T @ grad @ ma).item()
+
+            # compute preconditioned grads
+            v = (mg @ ma.T).mul_(-ag/(a * g + self.damping))
+            v.add_(grad)
+            v.div_(self.damping)
+
+            # weight and bias
+            if module.bias is not None:
+                weight = v[:, :-1].view(module.weight.grad.data.size())
+                bias = v[:, -1:].view(module.bias.grad.data.size())
+                # kl clip: grad and precon grad
+                if self.kl_clip is not None:
+                    vg_sum += (weight * module.weight.grad.data * self.lr ** 2).sum().item()
+                    vg_sum += (bias * module.bias.grad.data * self.lr ** 2).sum().item()
+                # copy
+                module.weight.grad.data.copy_(weight)
+                module.bias.grad.data.copy_(bias)
+                del grad
+            else:
+                weight = v.view(module.weight.grad.data.size())
+                if self.kl_clip is not None:
+                    vg_sum += (weight * module.weight.grad.data * self.lr ** 2).sum().item()
+                module.weight.grad.data.copy_(weight)
+            del v
+
+        # kl clip
+        if self.kl_clip is not None:
+            nu = min(1.0, math.sqrt(self.kl_clip / abs(vg_sum)))
+
+            for module in self.modules:
+                module.weight.grad.data.mul_(nu)
+                if module.bias is not None:
+                    module.bias.grad.data.mul_(nu)
 
     def _get_grad(self, module):
         """Get gradient with shape [output_dim, input_dim] for module"""
@@ -259,7 +301,8 @@ class KFAC(optim.Optimizer):
         	self._communicate_factors()
         
         #self._precondition_grads()
-        self._precondition_grads_fast()
+        #self._precondition_grads_fast()
+        self._precondition_grads_faster()
 
         self.steps += 1
 

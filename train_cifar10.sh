@@ -11,18 +11,18 @@ momentum="${momentum:-0.9}"
 clusterprefix="${clusterprefix:-cluster}"
 
 if [ "$epochs" = "165" ]; then
-lr_decay="${lr_decay:-82 123}"
+lr_decay="${lr_decay:-80 120}"
 else
-#lr_decay="${lr_decay:-35 75 90}"
-lr_decay="${lr_decay:-35 65 80 90}"
+lr_decay="${lr_decay:-35 75 90}"
+#lr_decay="${lr_decay:-35 65 80 90}"
 fi
 
 kfac="${kfac:-1}"
 fac="${fac:-1}"
-kfac_name="${kfac_name:-eigen_dp}"
+kfac_name="${kfac_name:-fast}"
 exclude_parts="${exclude_parts:-''}"
 stat_decay="${stat_decay:-0.95}"
-damping="${damping:-0.003}"
+damping="${damping:-0.03}"
 kl_clip="${kl_clip:-0.001}"
 
 horovod="${horovod:-1}"
