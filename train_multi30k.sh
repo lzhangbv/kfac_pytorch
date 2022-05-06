@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # model training settings
-epochs="${epochs:-200}"
+epochs="${epochs:-100}"
 batch_size="${batch_size:-128}"
 
 use_adam="${use_adam:-0}"
@@ -15,11 +15,11 @@ warmup_epochs="${warmup_epochs:-0}"
 scale_emb_or_prj="${scale_emb_or_prj:-emb}"
 n_layers="${n_layers:-2}"
 
-kfac="${kfac:-5}"
-fac="${fac:-5}"
-kfac_name="${kfac_name:-eigen_dp}"
+kfac="${kfac:-1}"
+fac="${fac:-1}"
+kfac_name="${kfac_name:-fast}"
 stat_decay="${stat_decay:-0.95}"
-damping="${damping:-0.001}"
+damping="${damping:-0.03}"
 exclude_parts="${exclude_parts:-''}"
 
 horovod="${horovod:-1}"

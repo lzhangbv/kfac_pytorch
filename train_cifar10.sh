@@ -6,7 +6,7 @@ dnn="${dnn:-resnet110}"
 batch_size="${batch_size:-128}"
 base_lr="${base_lr:-0.1}"
 epochs="${epochs:-100}"
-warmup_epochs="${warmup_epochs:-1}"
+warmup_epochs="${warmup_epochs:-5}"
 momentum="${momentum:-0.9}"
 clusterprefix="${clusterprefix:-cluster}"
 

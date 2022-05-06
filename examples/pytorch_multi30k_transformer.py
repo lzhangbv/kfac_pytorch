@@ -27,7 +27,8 @@ formatter = logging.Formatter('%(asctime)s [%(filename)s:%(lineno)d] %(levelname
 strhdlr.setFormatter(formatter)
 logger.addHandler(strhdlr) 
 
-SPEED = True
+#SPEED = True
+SPEED = False
 
 import torch
 import torch.backends.cudnn as cudnn
@@ -315,7 +316,10 @@ def get_model(args):
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.local_rank])
 
     # Learning Rate Schedule
-    if args.use_adam:
+    args.step_lr_schedule = args.use_adam
+    #args.step_lr_schedule = True
+    
+    if args.step_lr_schedule:
         lr_scheduler = LrScheduler(optimizer, args.lr_mul, args.d_model, args.n_warmup_steps)
     else:
         lrs = create_lr_schedule(backend.comm.size(), args.warmup_epochs, args.lr_decay, args.lr_decay_alpha)
@@ -398,7 +402,7 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, train_iterator,
 
         # backward and update parameters
         loss.backward()
-        if args.use_adam:
+        if args.step_lr_schedule:
             lr_scheduler.step() # schedule learning rate at each iteration
         
         if args.horovod:
@@ -425,7 +429,7 @@ def train(epoch, model, optimizer, preconditioner, lr_scheduler, train_iterator,
     if args.verbose:
         logger.info("[%d] epoch train loss: %.4f, acc: %.3f" % (epoch, train_loss.sum.item() / train_total_word.sum.item(), 100 * train_correct_word.sum.item() / train_total_word.sum.item()))
 
-    if not args.use_adam:
+    if not args.step_lr_schedule:
         lr_scheduler.step() # schedule learning rate at each epoch
     #else:
     #    if args.verbose:

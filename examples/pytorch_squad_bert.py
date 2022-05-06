@@ -37,7 +37,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-SPEED = True
+SPEED = False
 
 # for bert
 from transformers import (
@@ -102,8 +102,8 @@ def initialize():
                         help='Alpha value for covariance accumulation (default: 0.95)')
     parser.add_argument('--damping', type=float, default=0.002,
                         help='KFAC damping factor (default 0.003)')
-    parser.add_argument('--kl-clip', type=float, default=None,
-                        help='KL clip (default: None)')
+    parser.add_argument('--kl-clip', type=float, default=0,
+                        help='KL clip (default: 0)')
     parser.add_argument('--use-adamw', type=int, default=1, 
                         help='use AdamW and its corresponding learnign rate schedule (default: 1)')
 
