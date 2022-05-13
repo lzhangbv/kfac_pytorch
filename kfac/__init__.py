@@ -1,9 +1,11 @@
 from kfac.fast_kfac import KFAC as FAST_KFAC 
+from kfac.fast_kfac_naive import KFAC as NAIVE_KFAC 
 from kfac.fast_shampoo import KFAC as FAST_SHAMPOO
 from kfac.fast_kfac import KFACParamScheduler
 
 kfac_mappers = {
     'fast': FAST_KFAC,
+    'naive': NAIVE_KFAC,
     'shampoo': FAST_SHAMPOO
     }
 

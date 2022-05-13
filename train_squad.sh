@@ -4,7 +4,7 @@
 model_type="${model_type:-bert}"
 batch_size="${batch_size:-4}"
 eval_batch_size="${eval_batch_size:-8}"
-lr="${lr:-0.000005}"
+lr="${base_lr:-0.000005}"
 epochs="${epochs:-3}"
 steps="${steps:-0}"
 #steps=200 # fast test
