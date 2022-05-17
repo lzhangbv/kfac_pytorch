@@ -15,11 +15,11 @@ warmup_epochs="${warmup_epochs:-0}"
 scale_emb_or_prj="${scale_emb_or_prj:-emb}"
 n_layers="${n_layers:-2}"
 
-kfac="${kfac:-5}"
-fac="${fac:-5}"
+kfac="${kfac:-1}"
+fac="${fac:-1}"
 kfac_name="${kfac_name:-eigen_dp}"
 stat_decay="${stat_decay:-0.95}"
-damping="${damping:-0.001}"
+damping="${damping:-0.03}"
 exclude_parts="${exclude_parts:-''}"
 
 horovod="${horovod:-1}"
@@ -29,6 +29,14 @@ params="--horovod $horovod --epoch $epochs --batch-size $batch_size  --lr-mul $l
 nworkers="${nworkers:-8}"
 rdma="${rdma:-1}"
 
+ngpu_per_node="${ngpu_per_node:-4}"
+node_count="${node_count:-2}"
+node_rank="${node_rank:-1}"
+
 script=examples/pytorch_multi30k_transformer.py
 
+if [ "$horovod" = "1" ]; then
 nworkers=$nworkers rdma=$rdma script=$script params=$params bash launch_horovod.sh
+else
+ngpu_per_node=$ngpu_per_node node_count=$node_count node_rank=$node_rank script=$script params=$params bash launch_torch.sh
+fi

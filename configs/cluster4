@@ -1,4 +1,5 @@
 #localhost slots=4
 
-gpu1 slots=4
+#gpu11 slots=4
+gpu12 slots=4
 

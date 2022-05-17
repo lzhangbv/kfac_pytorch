@@ -27,7 +27,8 @@ formatter = logging.Formatter('%(asctime)s [%(filename)s:%(lineno)d] %(levelname
 strhdlr.setFormatter(formatter)
 logger.addHandler(strhdlr) 
 
-SPEED = True
+#SPEED = True
+SPEED = False
 
 import torch
 import torch.backends.cudnn as cudnn

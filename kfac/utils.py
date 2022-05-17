@@ -54,18 +54,23 @@ def _extract_patches(x, kernel_size, stride, padding):
     return x
 
 
+#def update_running_avg(new, current, alpha):
+#    """Compute running average of matrix in-place
+#
+#    current = (1-alpha) * new + (alpha) * current
+#    """
+#    current *= alpha / (1 - alpha)
+#    current += new
+#    current *= (1 - alpha)
+
 def update_running_avg(new, current, alpha):
     """Compute running average of matrix in-place
-
-    current = (1-alpha) * new + (alpha) * current
+    current = alpha * new + (1-alpha) * current
     """
-    current *= alpha / (1 - alpha)
-    current += new
-    current *= (1 - alpha)
+    current.mul_(1-alpha)
+    current.add_(new, alpha=alpha)
 
-
-""""old KF_comp implementations only used for debug"""
-class _ComputeA:
+class ComputeA:
     
     @classmethod
     def __call__(cls, a, layer):
@@ -98,7 +103,7 @@ class _ComputeA:
         return a.t() @ (a / batch_size)
 
 
-class _ComputeG:
+class ComputeG:
     
     @classmethod
     def __call__(cls, g, layer, batch_averaged):
@@ -135,7 +140,8 @@ class _ComputeG:
         return cov_g
 
 
-class ComputeA:
+# WIP
+class _ComputeA:
     def __init__(self, linear_average=Linear_Average, conv2d_average=False, use_tensor_core=False):
         self.linear_average = linear_average
         self.conv2d_average = conv2d_average
@@ -196,7 +202,7 @@ class ComputeA:
         return dim_A
 
 
-class ComputeG:
+class _ComputeG:
     def __init__(self, linear_average=Linear_Average, conv2d_average=False, use_tensor_core=False):
         self.linear_average = linear_average
         self.conv2d_average = conv2d_average

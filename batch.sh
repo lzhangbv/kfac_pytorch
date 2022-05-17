@@ -13,17 +13,22 @@
 #bash train_multi30k.sh
 #bash train_squad.sh
 
+# Hyper-parameter Tuning
+#kfac_name=eigen_dp fac=10 kfac=10 damping=0.03 stat_decay=0.95 epochs=100 bash train_cifar10.sh
+#kfac_name=eigen_dp fac=10 kfac=10 damping=0.03 stat_decay=0.95 epochs=100 bash train_cifar100.sh
+#kfac_name=eigen_dp fac=10 kfac=10 damping=0.03 stat_decay=0.95 epochs=200 bash train_multi30k.sh
+#kfac_name=eigen_dp fac=10 kfac=10 damping=0.03 stat_decay=0.95 epochs=3 bash train_squad.sh
 
 # Training efficiency
 fac=1
 kfac=1
 kfac_name=eigen_dp #eigen_dp # choices: inverse, inverse_dp, eigen, eigen_dp
 
-kfac=$kfac fac=$fac kfac_name=$kfac_name epochs=1 dnn=resnet110 batch_size=128 nworkers=4 bash train_cifar10.sh
-kfac=$kfac fac=$fac kfac_name=$kfac_name epochs=1 dnn=vgg16 batch_size=128 nworkers=4 bash train_cifar100.sh
-kfac=$kfac fac=$fac kfac_name=$kfac_name epochs=1 dnn=resnet50 batch_size=32 nworkers=64 bash train_imagenet.sh
-kfac=$kfac fac=$fac kfac_name=$kfac_name epochs=1 dnn=densenet201 batch_size=16 nworkers=64 bash train_imagenet.sh
-kfac=$kfac fac=$fac kfac_name=$kfac_name epochs=1 dnn=inceptionv4 batch_size=16 nworkers=64 bash train_imagenet.sh
-kfac=$kfac fac=$fac kfac_name=$kfac_name epochs=5 n_layers=6 batch_size=128 nworkers=8 bash train_multi30k.sh
-kfac=$kfac fac=$fac kfac_name=$kfac_name epochs=1 batch_size=4 nworkers=8 bash train_squad.sh
+#kfac=$kfac fac=$fac kfac_name=$kfac_name epochs=1 dnn=resnet110 batch_size=128 nworkers=4 bash train_cifar10.sh
+#kfac=$kfac fac=$fac kfac_name=$kfac_name epochs=1 dnn=vgg16 batch_size=128 nworkers=4 bash train_cifar100.sh
+#kfac=$kfac fac=$fac kfac_name=$kfac_name epochs=1 dnn=resnet50 batch_size=32 nworkers=64 bash train_imagenet.sh
+#kfac=$kfac fac=$fac kfac_name=$kfac_name epochs=1 dnn=densenet201 batch_size=16 nworkers=64 bash train_imagenet.sh
+#kfac=$kfac fac=$fac kfac_name=$kfac_name epochs=1 dnn=inceptionv4 batch_size=16 nworkers=64 bash train_imagenet.sh
+#kfac=$kfac fac=$fac kfac_name=$kfac_name epochs=5 n_layers=6 batch_size=128 nworkers=8 bash train_multi30k.sh
+#kfac=$kfac fac=$fac kfac_name=$kfac_name epochs=1 batch_size=4 nworkers=8 bash train_squad.sh
 

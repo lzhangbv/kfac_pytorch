@@ -36,7 +36,8 @@ import kfac.backend as backend #don't use a `from` import
 import horovod.torch as hvd
 import torch.distributed as dist
 
-SPEED = True
+#SPEED = True
+SPEED = False
 
 def initialize():
     # Training Parameters
