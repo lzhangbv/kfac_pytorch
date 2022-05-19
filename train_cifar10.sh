@@ -27,5 +27,14 @@ params="--horovod $horovod --dataset $dataset --dir /datasets/cifar10 --model $d
 nworkers="${nworkers:-4}"
 rdma="${rdma:-1}"
 
+ngpu_per_node="${ngpu_per_node:-4}"
+node_count="${node_count:-1}"
+node_rank="${node_rank:-1}"
+
 script=examples/pytorch_cifar10_resnet.py
+
+if [ "$horovod" = "1" ]; then
 nworkers=$nworkers rdma=$rdma script=$script params=$params bash launch_horovod.sh
+else
+ngpu_per_node=$ngpu_per_node node_count=$node_count node_rank=$node_rank script=$script params=$params bash launch_torch.sh
+fi

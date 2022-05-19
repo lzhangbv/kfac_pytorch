@@ -116,12 +116,16 @@ class KFAC(KFAC_BASE):
                 self.m_inv_G[module] = G.new_zeros(G.shape)
             
             rank_a, rank_g = self.module_ranks[module]
+            A = self.m_A[module]
+            G = self.m_G[module]
+            pi = torch.sqrt((A.trace()/A.shape[0])/(G.trace()/G.shape[0]))
+
             if backend.comm.rank() == rank_a:
-                A = self._add_value_to_diagonal(self.m_A[module], self.damping)
+                A = self._add_value_to_diagonal(self.m_A[module], (self.damping**0.5) * pi)
                 self.m_inv_A[module] = mat_inv(A)
 
             if backend.comm.rank() == rank_g:
-                G = self._add_value_to_diagonal(self.m_G[module], self.damping)
+                G = self._add_value_to_diagonal(self.m_G[module], (self.damping**0.5) / pi)
                 self.m_inv_G[module] = mat_inv(G)
 
     ### Communicate Inverse KFs

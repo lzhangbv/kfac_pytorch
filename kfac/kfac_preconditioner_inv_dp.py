@@ -99,18 +99,27 @@ class KFAC(KFAC_INV):
         """Compute inverse factors distributively"""
         for module in self.modules:
             rank_a, rank_g = self.module_ranks[module]
+            if rank_a == rank_g and backend.comm.rank() == rank_a:
+                A = self.m_A[module]
+                G = self.m_G[module]
+                pi = torch.sqrt((A.trace()/A.shape[0])/(G.trace()/G.shape[0]))
+            else:
+                pi = 1
+
             if backend.comm.rank() == rank_a:
                 # if self.steps == 0: # initialize memory as inv_A=0
                 #     A = self.m_A[module]
                 #     self.m_inv_A[module] = A.new_zeros(A.shape)
-                A = self._add_value_to_diagonal(self.m_A[module], self.damping)
+                #A = self._add_value_to_diagonal(self.m_A[module], self.damping)
+                A = self._add_value_to_diagonal(self.m_A[module], (self.damping**0.5) * pi)
                 self.m_inv_A[module] = mat_inv(A)
 
             if backend.comm.rank() == rank_g:
                 # if self.steps == 0: # initialize memory as inv_G=0
                 #     G = self.m_G[module]
                 #     self.m_inv_G[module] = G.new_zeros(G.shape)             
-                G = self._add_value_to_diagonal(self.m_G[module], self.damping)
+                #G = self._add_value_to_diagonal(self.m_G[module], self.damping)
+                G = self._add_value_to_diagonal(self.m_G[module], (self.damping**0.5) / pi)
                 self.m_inv_G[module] = mat_inv(G)
 
     ### Compute Preconditioned Gradients distributively

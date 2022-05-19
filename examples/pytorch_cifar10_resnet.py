@@ -136,7 +136,7 @@ def initialize():
     # Logging Settings
     os.makedirs(args.log_dir, exist_ok=True)
     logfile = os.path.join(args.log_dir,
-        '{}_{}_ep{}_bs{}_gpu{}_kfac{}_{}_{}.log'.format(args.dataset, args.model, args.epochs, args.batch_size, backend.comm.size(), args.kfac_update_freq, args.kfac_name, args.exclude_parts))
+        '{}_{}_ep{}_bs{}_gpu{}_kfac{}_{}_damp{}.log'.format(args.dataset, args.model, args.epochs, args.batch_size, backend.comm.size(), args.kfac_update_freq, args.kfac_name, args.damping))
 
     hdlr = logging.FileHandler(logfile)
     hdlr.setFormatter(formatter)
