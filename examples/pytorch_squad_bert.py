@@ -37,8 +37,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-#SPEED = True
-SPEED = False
+SPEED = True
+#SPEED = False
 
 # for bert
 from transformers import (

@@ -330,7 +330,8 @@ def train(epoch, model, optimizer, preconditioner, lr_schedules, lrs,
     train_loss = Metric('train_loss')
     train_accuracy = Metric('train_accuracy')
     avg_time = 0.0
-    display=20
+    #display=20
+    display=50
 
     if STEP_FIRST:
         for scheduler in lr_schedules:
@@ -390,7 +391,7 @@ def train(epoch, model, optimizer, preconditioner, lr_schedules, lrs,
                     iotimes = [];fwbwtimes=[];kfactimes=[];commtimes=[]
                 ittimes.append(avg_time/display)
                 avg_time = 0.0
-            if batch_idx > 120 and SPEED:
+            if batch_idx > (display * 6) and SPEED:
                 if args.verbose:
                     logger.info("Iteration time: mean %.3f, std: %.3f" % (np.mean(ittimes[1:]),np.std(ittimes[1:])))
                 break
