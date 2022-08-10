@@ -81,16 +81,14 @@ Note: if `--kfac-update-freq 0`, the K-FAC Preconditioning is skipped entirely, 
 
 Make sure the datasets were prepared in correct  dirs (e.g., /datasets/cifar10) before running the experiments. We downloaded Cifar-10, Cifar-100, and Imagenet datasets via Torchvision's [Datasets](https://pytorch.org/vision/stable/datasets.html), preprocessed Multi-30k dataset with torchtext and spacy (see [usage](https://github.com/jadore801120/attention-is-all-you-need-pytorch)), and preprocessed SQuAD dataset with huggingface's [SquadV1Processor](https://huggingface.co/docs/transformers/main_classes/processors). 
 
-<!-- ## Citation
+## Citation
 
 ```
-@article{pauloski2020convolutional,
-    title={Convolutional Neural Network Training with Distributed K-FAC},
-    author={J. Gregory Pauloski and Zhao Zhang and Lei Huang and Weijia Xu and Ian T. Foster},
-    year={2020},
-    pages={to appear in the proceedings of SC20},
-    eprint={2007.00784},
-    archivePrefix={arXiv},
-    primaryClass={cs.LG}
+@article{Zhang2022dpkfac,
+  title={Scalable K-FAC Training for Deep Neural Networks with Distributed Preconditioning},
+  author={Lin Zhang and Shaohuai Shi and Wei Wang and Bo Li},
+  journal={ArXiv},
+  year={2022},
+  volume={abs/2206.15143}
 }
-``` -->
+```
