@@ -87,7 +87,8 @@ class KFAC(optim.Optimizer):
         self.fac_update_freq = fac_update_freq
         self.kfac_update_freq = kfac_update_freq
         self.communicate_inverse_or_not = communicate_inverse_or_not
-        self.kl_clip = kl_clip
+        #self.kl_clip = kl_clip
+        self.kl_clip = kl_clip if (kl_clip is not None and kl_clip > 0) else None
         self.factor_decay = factor_decay
         self.exclude_vocabulary_size = exclude_vocabulary_size
         self.hook_enabled = hook_enabled
