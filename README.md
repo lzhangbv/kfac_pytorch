@@ -84,11 +84,11 @@ Make sure the datasets were prepared in correct  dirs (e.g., /datasets/cifar10) 
 ## Citation
 
 ```
-@article{Zhang2022dpkfac,
-  title={Scalable K-FAC Training for Deep Neural Networks with Distributed Preconditioning},
-  author={Lin Zhang and Shaohuai Shi and Wei Wang and Bo Li},
-  journal={ArXiv},
+@article{zhang2022scalable,
+  title={Scalable K-FAC Training for Deep Neural Networks With Distributed Preconditioning},
+  author={Zhang, Lin and Shi, Shaohuai and Wang, Wei and Li, Bo},
+  journal={IEEE Transactions on Cloud Computing},
   year={2022},
-  volume={abs/2206.15143}
+  publisher={IEEE}
 }
 ```
